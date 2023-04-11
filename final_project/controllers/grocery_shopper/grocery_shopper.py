@@ -2,7 +2,7 @@
 
 # Nov 2, 2022
 
-from controller import Robot
+from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard
 import math
 import numpy as np
 
@@ -88,11 +88,51 @@ map = None
 # Helper Functions
 
 
+# ------------------------------------------------------------------
+# Robot Modes
+mode = "manual"
+
+keyboard = robot.getKeyboard()
+keyboard.enable(timestep)
+
+def mode_manual(vL, vR):
+
+    key = keyboard.getKey()
+    while(keyboard.getKey() != -1): pass
+    if key == keyboard.LEFT :
+        vL = -MAX_SPEED
+        vR = MAX_SPEED
+    elif key == keyboard.RIGHT:
+        vL = MAX_SPEED
+        vR = -MAX_SPEED
+    elif key == keyboard.UP:
+        vL = MAX_SPEED
+        vR = MAX_SPEED
+    elif key == keyboard.DOWN:
+        vL = -MAX_SPEED
+        vR = -MAX_SPEED
+    elif key == ord(' '):
+        vL = 0
+        vR = 0
+    elif key == ord('S'):
+        pass
+    else: # slow down
+        vL *= 0.75
+        vR *= 0.75
+
+    return vL, vR
+
+
+
 gripper_status="closed"
 
 # Main Loop
 while robot.step(timestep) != -1:
     
+
+    if mode == "manual":
+        vL, vR = mode_manual(vL, vR)
+        
     
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
