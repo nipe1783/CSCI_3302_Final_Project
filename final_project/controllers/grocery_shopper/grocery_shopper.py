@@ -2,7 +2,7 @@
 
 # Nov 2, 2022
 
-from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard
+from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard, Display
 import math
 import numpy as np
 
@@ -68,9 +68,17 @@ lidar.enablePointCloud()
 # Enable display
 display = robot.getDevice("display")
 
+# Environment dimesnions:
+# Width: 16.1 m
+# Height: 30 m
+# Origin is in bottom right of the room.
+
+world_width = 16.1 - 1.5
+world_height = 30 - 1.5
+
 # Odometry
-pose_x     = 0
-pose_y     = 0
+pose_x     = world_height - 10
+pose_y     = world_width/2
 pose_theta = 0
 
 vL = 0
@@ -80,13 +88,83 @@ lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
 
+map_width = int(360 * (world_width/ world_height))
+map_height = 360
+
+world_to_map_width = map_width / world_width
+world_to_map_height = map_height / world_height
+
 map = None
+map = np.zeros(shape=[map_height,map_width])
 
 
 
 # ------------------------------------------------------------------
 # Helper Functions
 
+def odometer(pose_x, pose_y, pose_theta, vL, vR, timestep):
+
+    pose_x += (vL+vR)/2/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0*math.cos(pose_theta)
+    pose_y -= (vL+vR)/2/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0*math.sin(pose_theta)
+    pose_theta += (vR-vL)/AXLE_LENGTH/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0
+
+    return pose_x, pose_y, pose_theta
+
+def position_gps(gps):
+    pose_x = gps.getValues()[0]
+    pose_y = gps.getValues()[1]
+
+    pose_x = -pose_x + (world_height / 2)
+    pose_y = -pose_y + (world_width / 2)
+
+    n = compass.getValues()
+    rad = math.atan2(n[0], n[1]) + math.pi
+    pose_theta = rad
+
+    return pose_x, pose_y, pose_theta
+
+def lidar_map(pose_x, pose_y, pose_theta, lidar):
+
+    lidar_sensor_readings = lidar.getRangeImage()
+    lidar_sensor_readings = lidar_sensor_readings[83:len(lidar_sensor_readings)-83]
+
+    point_cloud_sensor_reading = lidar.getPointCloud()
+    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
+
+    for i, point in enumerate(point_cloud_sensor_reading):
+
+        # x, y, z are relative to lidar point origin.
+        rx = point.x
+        ry = point.y
+        rz = point.z
+        rho = math.sqrt( rx** 2+ ry**2)
+
+        alpha = lidar_offsets[i]
+
+        # point location in world coa:
+        wx = math.cos(pose_theta) * rx - math.sin(pose_theta) * ry + pose_x
+        wy = math.sin(pose_theta) * rx + math.cos(pose_theta) * ry + pose_y
+
+        if wx >= world_height:
+            wx = world_height - .001
+        elif wx <= 0:
+            wx = .001
+        if  wy >= world_width:
+            wy = world_width - .001
+        elif wy <= 0:
+            wy = .001
+        if abs(rho) < LIDAR_SENSOR_MAX_RANGE:
+            mx = abs(int(wx * world_to_map_height))
+            my = abs(int(wy * world_to_map_width))
+            # print("wx: ", wx, " wy: ", wy, " mx: ", mx, " my: ", my)
+            # You will eventually REPLACE the following lines with a more robust version of the map
+            # with a grayscale drawing containing more levels than just 0 and 1.
+            if map[mx, my] < 1:
+                map[mx, my] += 0.005
+            g = int(map[mx, my] * 255)
+            # display.setColor(g*(256**2) + g*256 + g)
+            display.setColor(int(0xFF0000))
+            display.drawPixel(my,mx)
 
 # ------------------------------------------------------------------
 # Robot Modes
@@ -119,7 +197,6 @@ def mode_manual(vL, vR):
     else: # slow down
         vL *= 0.75
         vR *= 0.75
-
     return vL, vR
 
 
@@ -134,6 +211,16 @@ while robot.step(timestep) != -1:
         vL, vR = mode_manual(vL, vR)
         
     
+    # Odometer coardinates:
+    # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
+
+    # GPS coardinates:
+    pose_x, pose_y, pose_theta = position_gps(gps)
+    # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
+
+    #Lidar Map:
+    lidar_map(pose_x, pose_y, pose_theta, lidar)
+
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
     
