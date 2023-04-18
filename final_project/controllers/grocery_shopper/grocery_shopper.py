@@ -164,7 +164,7 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
             g = int(map[mx, my] * 255)
             # display.setColor(g*(256**2) + g*256 + g)
             display.setColor(int(0xFF0000))
-            display.drawPixel(my,mx)
+            display.drawPixel(my + 50,mx)
 
 # ------------------------------------------------------------------
 # Robot Modes
