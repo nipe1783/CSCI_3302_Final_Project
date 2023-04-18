@@ -5,6 +5,8 @@
 from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard, Display
 import math
 import numpy as np
+from scipy.signal import convolve2d
+from matplotlib import pyplot as plt
 
 #Initialization
 print("=== Initializing Grocery Shopper...")
@@ -94,7 +96,6 @@ map_height = 360
 world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
-map = None
 map = np.zeros(shape=[map_height,map_width])
 
 
@@ -166,9 +167,67 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
             display.setColor(int(0xFF0000))
             display.drawPixel(my + 50,mx)
 
+configuration_space = np.zeros(shape=[360,360])
+width = round(30*(AXLE_LENGTH + .25)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
+robot_space = np.ones(shape=[width,width])
+threshold = 0.2 # we can change this value for tuning of what is considered an obstacle.
+
+def configuration_map():
+    configuration_space = convolve2d(map, robot_space, mode = "same")
+    configuration_space = (configuration_space >= 1).astype(int)
+    return configuration_space
+
+def obstacle_detected():
+
+    # returns true if obstacle too close infront of robot
+    turn_left = False
+    turn_right = False
+    point_cloud_sensor_reading = lidar.getPointCloud()
+    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
+    point_center = point_cloud_sensor_reading[250]
+    point_left = point_cloud_sensor_reading[230]
+    point_right = point_cloud_sensor_reading[270]
+
+    rho_center = math.sqrt( point_center.x** 2+ point_center.y**2)
+    rho_left = math.sqrt( point_left.x** 2+ point_left.y**2)
+    rho_right = math.sqrt( point_right.x** 2+ point_right.y**2)
+
+    if(rho_right < 2):
+        turn_left = True
+    if(rho_left < 2):
+        turn_right = True
+    if(rho_center < 1):
+        turn_right = True
+
+    return turn_left, turn_right
+
+def roam(vL, vR):
+    # Function to randomly explore map until goal is detected.
+    turn_left, turn_right = obstacle_detected()
+
+    if turn_left and turn_right:
+        # Turn Right
+        vL = MAX_SPEED/5
+        vR = -MAX_SPEED/5
+    elif turn_left:
+        # Turn Left
+        vL = -MAX_SPEED/5
+        vR = MAX_SPEED/5
+    elif turn_right:
+        # Turn Right
+        vL = MAX_SPEED/5
+        vR = -MAX_SPEED/5
+    else:
+        # Continue Forward
+        vL = MAX_SPEED
+        vR = MAX_SPEED
+
+    return vL, vR
+
 # ------------------------------------------------------------------
 # Robot Modes
 mode = "manual"
+mode = "roam"
 
 keyboard = robot.getKeyboard()
 keyboard.enable(timestep)
@@ -193,7 +252,8 @@ def mode_manual(vL, vR):
         vL = 0
         vR = 0
     elif key == ord('S'):
-        pass
+        plt.imshow(configuration_space)
+        plt.show()
     else: # slow down
         vL *= 0.75
         vR *= 0.75
@@ -209,6 +269,9 @@ while robot.step(timestep) != -1:
 
     if mode == "manual":
         vL, vR = mode_manual(vL, vR)
+
+    if mode == "roam":
+        vL, vR = roam(vL, vR)
         
     
     # Odometer coardinates:
