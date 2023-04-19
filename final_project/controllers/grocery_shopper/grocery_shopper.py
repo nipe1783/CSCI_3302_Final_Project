@@ -177,6 +177,8 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
 # ------------------------------------------------------------------
 # Robot Modes
 mode = "manual"
+state = "navigation"
+counter = 0
 
 keyboard = robot.getKeyboard()
 keyboard.enable(timestep)
@@ -207,9 +209,23 @@ def mode_manual(vL, vR):
         vR *= 0.75
     return vL, vR
 
+def manipulate_to(target_position, target_orientation=None):
 
-
-gripper_status="closed"
+    # Note: +x is forword
+    target_frame = np.eye(4)
+    target_frame[:3, 3] = target_position
+    if target_orientation is not None:
+        target_frame[:3, :3] = target_orientation
+    # else:
+    joints = my_chain.inverse_kinematics_frame(target_frame, initial_position=[0.2]*13)
+    robot_parts["torso_lift_joint"].setPosition(joints[2])
+    robot_parts["arm_1_joint"].setPosition(joints[4])
+    robot_parts["arm_2_joint"].setPosition(joints[5])
+    robot_parts["arm_3_joint"].setPosition(joints[6])
+    robot_parts["arm_4_joint"].setPosition(joints[7])
+    robot_parts["arm_5_joint"].setPosition(joints[8])
+    robot_parts["arm_6_joint"].setPosition(joints[9])
+    robot_parts["arm_7_joint"].setPosition(joints[10])
 
 # Main Loop
 while robot.step(timestep) != -1:
@@ -228,19 +244,51 @@ while robot.step(timestep) != -1:
 
     #Lidar Map:
     lidar_map(pose_x, pose_y, pose_theta, lidar)
-
-    robot_parts["wheel_left_joint"].setVelocity(vL)
-    robot_parts["wheel_right_joint"].setVelocity(vR)
-    
-    if(gripper_status=="open"):
-        # Close gripper, note that this takes multiple time steps...
-        robot_parts["gripper_left_finger_joint"].setPosition(0)
-        robot_parts["gripper_right_finger_joint"].setPosition(0)
-        if right_gripper_enc.getValue()<=0.005:
-            gripper_status="closed"
-    else:
-        # Open gripper
+    if state == "exploration":
+        pass
+    if state == "navigation":
+        pass
+    elif state == "openGripper":
         robot_parts["gripper_left_finger_joint"].setPosition(0.045)
         robot_parts["gripper_right_finger_joint"].setPosition(0.045)
         if left_gripper_enc.getValue()>=0.044:
-            gripper_status="open"
+            state = "setArmToTarget"
+    elif state == "setArmToTarget":
+        manipulate_to([x,y,z], )
+        state = "movingArmToTarget"
+    elif state == "movingArmToTarget":
+        if (counter < 50):
+            counter += 1
+        else:
+            state = "closeGripper"
+            counter = 0
+    elif state == "closeGripper":
+        robot_parts["gripper_left_finger_joint"].setPosition(0)
+        robot_parts["gripper_right_finger_joint"].setPosition(0)
+        if right_gripper_enc.getValue()<=0.005:
+            state = "setArmToBasket"
+    elif state == "setArmToBasket":
+        manipulate_to([0.3, 0, 1])
+        state = "movingArmToBasket"
+    elif state == "movingArmToBasket":
+        if (counter < 50):
+            counter += 1
+        else:
+            state = "releaseObject"
+            counter = 0
+    elif state == "releaseObject":
+        robot_parts["gripper_left_finger_joint"].setPosition(0.045)
+        robot_parts["gripper_right_finger_joint"].setPosition(0.045)
+        if left_gripper_enc.getValue()>=0.044:
+            state = "stowArm"
+    elif state == "stowArm":
+        manipulate_to([0.3, 0, 1.6])
+        state = "exploration"
+
+    
+        
+        
+    robot_parts["wheel_left_joint"].setVelocity(vL)
+    robot_parts["wheel_right_joint"].setVelocity(vR)
+    
+    
