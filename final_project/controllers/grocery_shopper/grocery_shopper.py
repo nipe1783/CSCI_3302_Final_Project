@@ -5,10 +5,15 @@
 from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard, Display
 import math
 import numpy as np
+from scipy.signal import convolve2d
+from matplotlib import pyplot as plt
+import ikpy
 import ikpy.chain
 import ikpy.utils.plot as plot
 import matplotlib.pyplot
 from mpl_toolkits.mplot3d import Axes3D
+import cv2
+import heapq
 
 #Initialization
 print("=== Initializing Grocery Shopper...")
@@ -98,7 +103,6 @@ map_height = 360
 world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
-map = None
 map = np.zeros(shape=[map_height,map_width])
 
 active_links =  [False, False, True, False,  True, True, True, True, True, True, True, False, False]
@@ -172,13 +176,271 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
             g = int(map[mx, my] * 255)
             # display.setColor(g*(256**2) + g*256 + g)
             display.setColor(int(0xFF0000))
-            display.drawPixel(my,mx)
+            display.drawPixel(my + 50,mx)
+
+configuration_space = np.zeros(shape=[360,360])
+width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
+robot_space = np.ones(shape=[width,width])
+threshold = 0.2 # we can change this value for tuning of what is considered an obstacle.
+
+def configuration_map():
+    configuration_space = convolve2d(map, robot_space, mode = "same")
+    configuration_space = (configuration_space >= 1).astype(int)
+    return configuration_space
+
+def obstacle_detected_goal_procedure():
+
+    # returns true if obstacle too close infront of robot
+    turn_left = False
+    turn_right = False
+    point_cloud_sensor_reading = lidar.getPointCloud()
+    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
+    point_center = point_cloud_sensor_reading[250]
+    point_left = point_cloud_sensor_reading[200]
+    point_right = point_cloud_sensor_reading[300]
+
+    rho_center = math.sqrt( point_center.x** 2+ point_center.y**2)
+    rho_left = math.sqrt( point_left.x** 2+ point_left.y**2)
+    rho_right = math.sqrt( point_right.x** 2+ point_right.y**2)
+
+    if(rho_right < 1.2):
+        turn_left = True
+    if(rho_left < 1.2):
+        turn_right = True
+    if(rho_center < 1.2):
+        turn_right = True
+
+    return turn_left, turn_right, rho_center
+
+def obstacle_detected_roam():
+
+    # returns true if obstacle too close infront of robot
+    turn_left = False
+    turn_right = False
+    point_cloud_sensor_reading = lidar.getPointCloud()
+    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
+    point_center = point_cloud_sensor_reading[250]
+    point_left = point_cloud_sensor_reading[200]
+    point_right = point_cloud_sensor_reading[300]
+
+    rho_center = math.sqrt( point_center.x** 2+ point_center.y**2)
+    rho_left = math.sqrt( point_left.x** 2+ point_left.y**2)
+    rho_right = math.sqrt( point_right.x** 2+ point_right.y**2)
+
+    if(rho_right < 2):
+        turn_left = True
+    if(rho_left < 2):
+        turn_right = True
+    if(rho_center < 2):
+        turn_right = True
+
+    return turn_left, turn_right
+
+goal_detected = False
+heading_error = True
+gx = 0
+stabalized = False
+counter = 0
+goal_reached = False
+
+def roam(vL, vR, goal_detected, heading_error, gx, stabalized, counter, goal_reached):
+
+    # Function to randomly explore map until goal is detected.
+    # print("goal_detected: ", goal_detected)
+    if not goal_detected:
+        turn_left, turn_right = obstacle_detected_roam()
+
+        if turn_left and turn_right:
+            # Turn Left
+            vL = -MAX_SPEED/7
+            vR = MAX_SPEED/7
+        elif turn_left:
+            # Turn Left
+            vL = -MAX_SPEED/7
+            vR = MAX_SPEED/7
+        elif turn_right:
+            # Turn Right
+            vL = MAX_SPEED/7
+            vR = -MAX_SPEED/7
+        else:
+            # Continue Forward
+            vL = MAX_SPEED/1.3
+            vR = MAX_SPEED/1.3
+
+        goal_detected, gx = goal_detect(gx)
+
+    else:
+        if heading_error:
+            goal_detected, gx = goal_detect(gx)
+            vL, vR, heading_error = goal_angle(vL, vR, gx)
+        else:
+            if not stabalized:
+                vL, vR, stabalized, counter = stabalize(counter)
+            else:
+                vL, vR, goal_reached = goal_approach(vL, vR)
+
+                if goal_reached:
+                    vL = 0
+                    vR = 0
+
+
+    return vL, vR, goal_detected, heading_error, gx, stabalized, counter, goal_reached
+
+def stabalize(counter):
+    if counter < 50:
+        counter += 1
+        return 0, 0, False, counter
+    else:
+        return 0, 0, True, counter
+
+def goal_detect(gx):
+
+    goal_detected = False
+
+    img = np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4))
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    lower_yellow = np.array([15,200,200])
+    upper_yellow = np.array([40,255,255])
+    mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
+
+    # apply Gaussian Blur
+    smoothed = cv2.GaussianBlur(mask, (0,0), sigmaX=1.5, sigmaY=1.5, borderType = cv2.BORDER_DEFAULT)
+    
+    # Apply a morphological opening to remove noise and small objects
+    kernel = np.ones((5,5),np.uint8)
+    opening = cv2.morphologyEx(smoothed, cv2.MORPH_OPEN, kernel)
+
+    # Find the contours of the remaining blobs in the image
+    contours, hierarchy = cv2.findContours(opening, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # CODE FOR SHOWING OBJECTS:
+    
+    # Draw the contours on a copy of the original image
+    smoothed_copy = smoothed.copy()
+    cv2.drawContours(smoothed, contours, -1, (0, 255, 0), 2)
+
+    # Identify the center of the blob by calculating the centroid of the contour
+
+    filtered_contours = []
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area > 100:
+            filtered_contours.append(c)
+
+    for c in filtered_contours:
+        M = cv2.moments(c)
+        cx = int(M['m10'] / M['m00'])
+        cy = int(M['m01'] / M['m00'])
+        cv2.circle(smoothed_copy, (cx, cy), 5, (0, 0, 255), -1)
+
+    key = keyboard.getKey()
+    while(keyboard.getKey() != -1): pass
+    if key == ord('S'):
+        plt.imshow(smoothed_copy)
+        plt.show()
+
+    if len(filtered_contours) > 0:
+        # location of first goal detected
+        c = contours[0]
+        M = cv2.moments(c)
+
+        goal_detected = True
+        gx = int(M['m10'] / M['m00'])
+        gy = int(M['m01'] / M['m00'])
+    else:
+        goal_detected = False
+
+    return goal_detected, gx
+
+def goal_angle(vL, vR, gx):
+
+    heading = True
+
+    # rotate robot so goal is at center of image.
+    if gx < 110:
+        # robot rotate left
+        vL = -MAX_SPEED/15
+        vR = MAX_SPEED/5
+    elif gx > 130:
+        # robot rotate right
+        vL = MAX_SPEED/5
+        vR = -MAX_SPEED/15
+    else:
+        # go forward
+        vL = 0
+        vR = 0
+        heading = False
+    
+    return vL, vR, heading
+
+def path_planner(map, start, end):
+    # '''
+    # :param map: A 2D numpy array of size 360x360 representing the world's cspace with 0 as free space and 1 as obstacle
+    # :param start: A tuple of indices representing the start cell in the map
+    # :param end: A tuple of indices representing the end cell in the map
+    # :return: A list of tuples as a path from the given start to the given end in the given maze
+    # '''
+    # pass
+    # A*
+    # format: (estimate, (x,y), (previous_x, previous_y), distance)
+    queue = [(math.dist(start, end), start, (-1,-1), 0)]
+    heapq.heapify(queue)
+    checked = []
+    while(queue):
+        queueItem = heapq.heappop(queue)
+        (estimate, point, prev, distance) = queueItem
+        if map[point[0], point[1]] == 0:
+            if point == end:
+                print('tracing through ' + str(len(checked)) + " nodes")
+                checked.reverse()
+                path = [point]
+                node = prev
+                for i in checked:
+                    if(i[1] == node):
+                        if(i[1] == start):
+                            path.reverse()
+                            return path
+                        path.append(node)
+                        node = i[2]
+                path.reverse()
+                return path
+            
+            checked.append(queueItem)
+            map[point[0], point[1]] = 1
+            # print(point)
+            nextSteps = [(0,1), (0,-1), (1,0), (-1,0), (1,1), (-1,1), (1,-1), (-1,-1)]
+            for i in nextSteps:
+                next = (point[0] + i[0], point[1] + i[1])
+                # print(next)
+                if next[0] >= 0 and next[0] < 360 and next[1] >= 0 and next[1] < 360 and map[next[0], next[1]] == 0:
+                    newDistance = distance + math.sqrt(i[0]**2 + i[1]**2)
+                    heapq.heappush(queue, (newDistance + math.dist(next, end), next, point, newDistance))
+    print("Error: Path Not Found")
+    return [end]
+
+
+def goal_approach(vL, vR):
+
+    goal_reached = False
+
+    turn_left, turn_right, rho = obstacle_detected_goal_procedure()
+    if rho > 1.2:
+        vL = MAX_SPEED/5
+        vR = MAX_SPEED/5
+    else:
+        goal_reached = True
+        vL = 0
+        vR = 0
+
+    return vL, vR, goal_reached
 
 # ------------------------------------------------------------------
 # Robot Modes
-mode = "manual"
+# mode = "manual"
+mode = "roam"
 state = "navigation"
 counter = 0
+
 
 keyboard = robot.getKeyboard()
 keyboard.enable(timestep)
@@ -203,7 +465,8 @@ def mode_manual(vL, vR):
         vL = 0
         vR = 0
     elif key == ord('S'):
-        pass
+        plt.imshow(configuration_space)
+        plt.show()
     else: # slow down
         vL *= 0.75
         vR *= 0.75
@@ -230,9 +493,11 @@ def manipulate_to(target_position, target_orientation=None):
 # Main Loop
 while robot.step(timestep) != -1:
     
-
     if mode == "manual":
         vL, vR = mode_manual(vL, vR)
+
+    if mode == "roam":
+        vL, vR , goal_detected, heading_error, gx, stabalized, counter, goal_reached = roam(vL, vR, goal_detected, heading_error, gx, stabalized, counter, goal_reached)
         
     
     # Odometer coardinates:
