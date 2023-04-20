@@ -7,6 +7,11 @@ import math
 import numpy as np
 from scipy.signal import convolve2d
 from matplotlib import pyplot as plt
+import ikpy
+import ikpy.chain
+import ikpy.utils.plot as plot
+import matplotlib.pyplot
+from mpl_toolkits.mplot3d import Axes3D
 import cv2
 import heapq
 
