@@ -177,7 +177,7 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
 # ------------------------------------------------------------------
 # Robot Modes
 mode = "manual"
-state = "navigation"
+state = "openGripper"
 counter = 0
 
 keyboard = robot.getKeyboard()
@@ -227,6 +227,9 @@ def manipulate_to(target_position, target_orientation=None):
     robot_parts["arm_6_joint"].setPosition(joints[9])
     robot_parts["arm_7_joint"].setPosition(joints[10])
 
+# Test statement/sanity check
+# manipulate_to([0.2, 0.3, 1.0])
+
 # Main Loop
 while robot.step(timestep) != -1:
     
@@ -254,10 +257,11 @@ while robot.step(timestep) != -1:
         if left_gripper_enc.getValue()>=0.044:
             state = "setArmToTarget"
     elif state == "setArmToTarget":
-        manipulate_to([x,y,z], )
+
+        manipulate_to([1,0,1.5], )
         state = "movingArmToTarget"
     elif state == "movingArmToTarget":
-        if (counter < 50):
+        if (counter < 100):
             counter += 1
         else:
             state = "closeGripper"
@@ -266,12 +270,21 @@ while robot.step(timestep) != -1:
         robot_parts["gripper_left_finger_joint"].setPosition(0)
         robot_parts["gripper_right_finger_joint"].setPosition(0)
         if right_gripper_enc.getValue()<=0.005:
+            state = "backOut"
+    elif state == "backOut":
+        if (counter < 50):
+            counter += 1
+            vL= -MAX_SPEED/2
+            vR= -MAX_SPEED/2
+        else:
             state = "setArmToBasket"
+            counter = 0
     elif state == "setArmToBasket":
-        manipulate_to([0.3, 0, 1])
+
+        manipulate_to([0.3, 0, 0.5])
         state = "movingArmToBasket"
     elif state == "movingArmToBasket":
-        if (counter < 50):
+        if (counter < 100):
             counter += 1
         else:
             state = "releaseObject"
@@ -282,7 +295,8 @@ while robot.step(timestep) != -1:
         if left_gripper_enc.getValue()>=0.044:
             state = "stowArm"
     elif state == "stowArm":
-        manipulate_to([0.3, 0, 1.6])
+
+        manipulate_to([0.2, -0.2, 1.6])
         state = "exploration"
 
     
