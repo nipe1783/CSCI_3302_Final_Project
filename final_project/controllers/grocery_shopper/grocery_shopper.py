@@ -100,7 +100,11 @@ world_to_map_height = map_height / world_height
 
 map = np.zeros(shape=[map_height,map_width])
 
-
+active_links =  [False, False, True, False,  True, True, True, True, True, True, True, False, False]
+my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_links)
+# curr_pose = my_chain.forward_kinematics([1] * 13)
+# target_orientation = [0.5, -0.5, 2.0]
+# target_position = [curr_pose[0][3], curr_pose[1][3], curr_pose[2][3]]
 
 # ------------------------------------------------------------------
 # Helper Functions
