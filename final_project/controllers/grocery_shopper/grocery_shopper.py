@@ -114,7 +114,8 @@ world_to_map_height = map_height / world_height
 
 map = np.zeros(shape=[map_height,map_width])
 
-active_links =  [False, False, True, False,  True, True, True, True, True, True, True, False, False]
+active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False, False]
+arm_joints =  [0, 0, 0.35, 0,  0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 0, 0, 0.045]
 my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_links)
 # curr_pose = my_chain.forward_kinematics([1] * 13)
 # target_orientation = [0.5, -0.5, 2.0]
@@ -359,16 +360,18 @@ def manipulate_to(target_position, target_orientation=None):
         target_frame[:3, :3] = target_orientation
     # else:
         # target_frame[:3, :3] = [[0,1,0],[1,0,0],[0,0,1]]
-    joints = my_chain.inverse_kinematics_frame(target_frame, initial_position=[0.2]*13)
-    print(joints)
-    robot_parts["torso_lift_joint"].setPosition(joints[2])
-    robot_parts["arm_1_joint"].setPosition(joints[4])
-    robot_parts["arm_2_joint"].setPosition(joints[5])
-    robot_parts["arm_3_joint"].setPosition(joints[6])
-    robot_parts["arm_4_joint"].setPosition(joints[7])
-    robot_parts["arm_5_joint"].setPosition(joints[8])
-    robot_parts["arm_6_joint"].setPosition(joints[9])
-    robot_parts["arm_7_joint"].setPosition(joints[10])
+    global arm_joints
+    arm_joints = my_chain.inverse_kinematics_frame(target_frame, initial_position=arm_joints)
+    print(target_position)
+    print(arm_joints)
+    robot_parts["torso_lift_joint"].setPosition(arm_joints[2])
+    robot_parts["arm_1_joint"].setPosition(arm_joints[4])
+    robot_parts["arm_2_joint"].setPosition(arm_joints[5])
+    robot_parts["arm_3_joint"].setPosition(arm_joints[6])
+    robot_parts["arm_4_joint"].setPosition(arm_joints[7])
+    robot_parts["arm_5_joint"].setPosition(arm_joints[8])
+    robot_parts["arm_6_joint"].setPosition(arm_joints[9])
+    robot_parts["arm_7_joint"].setPosition(arm_joints[10])
     
 # Test statement/sanity check
 # manipulate_to([0.2, 0.3, 1.0])
@@ -413,7 +416,7 @@ while robot.step(timestep) != -1:
         elif state == "approach":
             if (not (gx == 0 and gy == 0)) and (gx < 110 or gx > 130):
                 state = "orient"
-            if lidar.getRangeImage()[333] > 1.2:
+            if lidar.getRangeImage()[333] > 1.3:
                 vL = MAX_SPEED/5
                 vR = MAX_SPEED/5
             else:
@@ -426,24 +429,30 @@ while robot.step(timestep) != -1:
             robot_parts["gripper_left_finger_joint"].setPosition(0.045)
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
             if left_gripper_enc.getValue()>=0.044:
-                state = "setArmToTarget"
-        elif state == "setArmToTarget":
-
-            manipulate_to([0.8,0,1.2])
-            state = "movingArmToTarget"
-        elif state == "movingArmToTarget":
+                state = "setArmToReady"
+        elif state == "setArmToReady":
+            
+            manipulate_to([1.2,
+                           -0.25,
+                           0.78 + arm_joints[2] ])
+            state = "movingArmToReady"
+        elif state == "movingArmToReady":
             delay(100, "forward")
         elif state == "forward":
-            vL = MAX_SPEED/3
-            vR = MAX_SPEED/3
-            delay(50, "closeGripper")
+            vL= MAX_SPEED/4
+            vR= MAX_SPEED/4
+            delay(100, "closeGripper")
         elif state == "closeGripper":
             vL = 0
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            if right_gripper_enc.getValue()<=0.005:
-                state = "backOut"
+            delay(40, "lift")    
+        elif state == "lift":
+            manipulate_to([0.9,
+                           -0.05,
+                           0.82 + arm_joints[2] ])
+            state = "backOut"
         elif state == "backOut":
             vL= -MAX_SPEED/2
             vR= -MAX_SPEED/2
@@ -451,15 +460,16 @@ while robot.step(timestep) != -1:
         elif state == "setArmToBasket":
             vL = 0
             vR = 0
-            manipulate_to([0.3, 0, 0.5])
+            manipulate_to([0.25,
+                           0.05,
+                           0.5 + arm_joints[2] ])
             state = "movingArmToBasket"
         elif state == "movingArmToBasket":
             delay(100, "releaseObject")
         elif state == "releaseObject":
             robot_parts["gripper_left_finger_joint"].setPosition(0.045)
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
-            if left_gripper_enc.getValue()>=0.044:
-                state = "stowArm"
+            delay(20, "stowArm")
         elif state == "stowArm":
 
             manipulate_to([0.0, -0.2, 1.6])
