@@ -97,6 +97,15 @@ lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
 
+
+# ------------------------------------------------------------------
+# Robot Modes
+# mode = "manual"
+mode = "roam"
+# state = "openGripper"
+state = "exploration"
+counter = 0
+
 map_width = int(360 * (world_width/ world_height))
 map_height = 360
 
@@ -105,7 +114,8 @@ world_to_map_height = map_height / world_height
 
 map = np.zeros(shape=[map_height,map_width])
 
-active_links =  [False, False, True, False,  True, True, True, True, True, True, True, False, False]
+active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False, False]
+arm_joints =  [0, 0, 0.35, 0,  0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 0, 0, 0.045]
 my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_links)
 # curr_pose = my_chain.forward_kinematics([1] * 13)
 # target_orientation = [0.5, -0.5, 2.0]
@@ -113,6 +123,17 @@ my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_
 
 # ------------------------------------------------------------------
 # Helper Functions
+
+def delay(time, newState):
+    global counter
+    if (counter < time):
+        counter += 1
+    else:
+        counter = 0
+        global state
+        state = newState
+    if mode == "manual":
+        vL, vR = mode_manual(vL, vR)
 
 def odometer(pose_x, pose_y, pose_theta, vL, vR, timestep):
 
@@ -188,30 +209,6 @@ def configuration_map():
     configuration_space = (configuration_space >= 1).astype(int)
     return configuration_space
 
-def obstacle_detected_goal_procedure():
-
-    # returns true if obstacle too close infront of robot
-    turn_left = False
-    turn_right = False
-    point_cloud_sensor_reading = lidar.getPointCloud()
-    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
-    point_center = point_cloud_sensor_reading[250]
-    point_left = point_cloud_sensor_reading[200]
-    point_right = point_cloud_sensor_reading[300]
-
-    rho_center = math.sqrt( point_center.x** 2+ point_center.y**2)
-    rho_left = math.sqrt( point_left.x** 2+ point_left.y**2)
-    rho_right = math.sqrt( point_right.x** 2+ point_right.y**2)
-
-    if(rho_right < 1.2):
-        turn_left = True
-    if(rho_left < 1.2):
-        turn_right = True
-    if(rho_center < 1.2):
-        turn_right = True
-
-    return turn_left, turn_right, rho_center
-
 def obstacle_detected_roam():
 
     # returns true if obstacle too close infront of robot
@@ -236,66 +233,7 @@ def obstacle_detected_roam():
 
     return turn_left, turn_right
 
-goal_detected = False
-heading_error = True
-gx = 0
-stabalized = False
-counter = 0
-goal_reached = False
-
-def roam(vL, vR, goal_detected, heading_error, gx, stabalized, counter, goal_reached):
-
-    # Function to randomly explore map until goal is detected.
-    # print("goal_detected: ", goal_detected)
-    if not goal_detected:
-        turn_left, turn_right = obstacle_detected_roam()
-
-        if turn_left and turn_right:
-            # Turn Left
-            vL = -MAX_SPEED/7
-            vR = MAX_SPEED/7
-        elif turn_left:
-            # Turn Left
-            vL = -MAX_SPEED/7
-            vR = MAX_SPEED/7
-        elif turn_right:
-            # Turn Right
-            vL = MAX_SPEED/7
-            vR = -MAX_SPEED/7
-        else:
-            # Continue Forward
-            vL = MAX_SPEED/1.3
-            vR = MAX_SPEED/1.3
-
-        goal_detected, gx = goal_detect(gx)
-
-    else:
-        if heading_error:
-            goal_detected, gx = goal_detect(gx)
-            vL, vR, heading_error = goal_angle(vL, vR, gx)
-        else:
-            if not stabalized:
-                vL, vR, stabalized, counter = stabalize(counter)
-            else:
-                vL, vR, goal_reached = goal_approach(vL, vR)
-
-                if goal_reached:
-                    vL = 0
-                    vR = 0
-
-
-    return vL, vR, goal_detected, heading_error, gx, stabalized, counter, goal_reached
-
-def stabalize(counter):
-    if counter < 50:
-        counter += 1
-        return 0, 0, False, counter
-    else:
-        return 0, 0, True, counter
-
-def goal_detect(gx):
-
-    goal_detected = False
+def goal_detect():
 
     img = np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4))
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -344,27 +282,25 @@ def goal_detect(gx):
         c = contours[0]
         M = cv2.moments(c)
 
-        goal_detected = True
         gx = int(M['m10'] / M['m00'])
         gy = int(M['m01'] / M['m00'])
+        return gx, gy, True
     else:
-        goal_detected = False
+        return 0, 0, False
 
-    return goal_detected, gx
-
-def goal_angle(vL, vR, gx):
+def goal_angle(gx):
 
     heading = True
 
     # rotate robot so goal is at center of image.
     if gx < 110:
         # robot rotate left
-        vL = -MAX_SPEED/15
-        vR = MAX_SPEED/5
+        vL = -MAX_SPEED/5
+        vR = MAX_SPEED/15
     elif gx > 130:
         # robot rotate right
-        vL = MAX_SPEED/5
-        vR = -MAX_SPEED/15
+        vL = MAX_SPEED/15
+        vR = -MAX_SPEED/5
     else:
         # go forward
         vL = 0
@@ -372,74 +308,6 @@ def goal_angle(vL, vR, gx):
         heading = False
     
     return vL, vR, heading
-
-def path_planner(map, start, end):
-    # '''
-    # :param map: A 2D numpy array of size 360x360 representing the world's cspace with 0 as free space and 1 as obstacle
-    # :param start: A tuple of indices representing the start cell in the map
-    # :param end: A tuple of indices representing the end cell in the map
-    # :return: A list of tuples as a path from the given start to the given end in the given maze
-    # '''
-    # pass
-    # A*
-    # format: (estimate, (x,y), (previous_x, previous_y), distance)
-    queue = [(math.dist(start, end), start, (-1,-1), 0)]
-    heapq.heapify(queue)
-    checked = []
-    while(queue):
-        queueItem = heapq.heappop(queue)
-        (estimate, point, prev, distance) = queueItem
-        if map[point[0], point[1]] == 0:
-            if point == end:
-                print('tracing through ' + str(len(checked)) + " nodes")
-                checked.reverse()
-                path = [point]
-                node = prev
-                for i in checked:
-                    if(i[1] == node):
-                        if(i[1] == start):
-                            path.reverse()
-                            return path
-                        path.append(node)
-                        node = i[2]
-                path.reverse()
-                return path
-            
-            checked.append(queueItem)
-            map[point[0], point[1]] = 1
-            # print(point)
-            nextSteps = [(0,1), (0,-1), (1,0), (-1,0), (1,1), (-1,1), (1,-1), (-1,-1)]
-            for i in nextSteps:
-                next = (point[0] + i[0], point[1] + i[1])
-                # print(next)
-                if next[0] >= 0 and next[0] < 360 and next[1] >= 0 and next[1] < 360 and map[next[0], next[1]] == 0:
-                    newDistance = distance + math.sqrt(i[0]**2 + i[1]**2)
-                    heapq.heappush(queue, (newDistance + math.dist(next, end), next, point, newDistance))
-    print("Error: Path Not Found")
-    return [end]
-
-
-def goal_approach(vL, vR):
-
-    goal_reached = False
-
-    turn_left, turn_right, rho = obstacle_detected_goal_procedure()
-    if rho > 1.2:
-        vL = MAX_SPEED/5
-        vR = MAX_SPEED/5
-    else:
-        goal_reached = True
-        vL = 0
-        vR = 0
-
-    return vL, vR, goal_reached
-
-# ------------------------------------------------------------------
-# Robot Modes
-# mode = "manual"
-mode = "roam"
-state = "navigation"
-counter = 0
 
 
 keyboard = robot.getKeyboard()
@@ -473,32 +341,139 @@ def mode_manual(vL, vR):
     return vL, vR
 
 def manipulate_to(target_position, target_orientation=None):
+    """Use IK to calculate position and then deliver position to joints
 
+        Parameters
+        ----------
+        target_position: array
+            3 value array with desired position
+        target_Orientation: numpy.array
+            An optional 3x3 array for orientation at destination
+        Output
+        ---------
+        Null
+    """
     # Note: +x is forword
     target_frame = np.eye(4)
     target_frame[:3, 3] = target_position
     if target_orientation is not None:
         target_frame[:3, :3] = target_orientation
     # else:
-    joints = my_chain.inverse_kinematics_frame(target_frame, initial_position=[0.2]*13)
-    robot_parts["torso_lift_joint"].setPosition(joints[2])
-    robot_parts["arm_1_joint"].setPosition(joints[4])
-    robot_parts["arm_2_joint"].setPosition(joints[5])
-    robot_parts["arm_3_joint"].setPosition(joints[6])
-    robot_parts["arm_4_joint"].setPosition(joints[7])
-    robot_parts["arm_5_joint"].setPosition(joints[8])
-    robot_parts["arm_6_joint"].setPosition(joints[9])
-    robot_parts["arm_7_joint"].setPosition(joints[10])
+        # target_frame[:3, :3] = [[0,1,0],[1,0,0],[0,0,1]]
+    global arm_joints
+    arm_joints = my_chain.inverse_kinematics_frame(target_frame, initial_position=arm_joints)
+    print(target_position)
+    print(arm_joints)
+    robot_parts["torso_lift_joint"].setPosition(arm_joints[2])
+    robot_parts["arm_1_joint"].setPosition(arm_joints[4])
+    robot_parts["arm_2_joint"].setPosition(arm_joints[5])
+    robot_parts["arm_3_joint"].setPosition(arm_joints[6])
+    robot_parts["arm_4_joint"].setPosition(arm_joints[7])
+    robot_parts["arm_5_joint"].setPosition(arm_joints[8])
+    robot_parts["arm_6_joint"].setPosition(arm_joints[9])
+    robot_parts["arm_7_joint"].setPosition(arm_joints[10])
+    
+# Test statement/sanity check
+# manipulate_to([0.2, 0.3, 1.0])
 
 # Main Loop
 while robot.step(timestep) != -1:
-    
-    if mode == "manual":
-        vL, vR = mode_manual(vL, vR)
-
+    gx, gy, goal_detected = goal_detect()
     if mode == "roam":
-        vL, vR , goal_detected, heading_error, gx, stabalized, counter, goal_reached = roam(vL, vR, goal_detected, heading_error, gx, stabalized, counter, goal_reached)
-        
+        if state == "exploration":
+            # Function to randomly explore map until goal is detected.
+            # print("goal_detected: ", goal_detected)
+            turn_left, turn_right = obstacle_detected_roam()
+
+            if turn_left and turn_right:
+                # Turn Left
+                vL = -MAX_SPEED/7
+                vR = MAX_SPEED/7
+            elif turn_left:
+                # Turn Left
+                vL = -MAX_SPEED/7
+                vR = MAX_SPEED/7
+            elif turn_right:
+                # Turn Right
+                vL = MAX_SPEED/7
+                vR = -MAX_SPEED/7
+            else:
+                # Continue Forward
+                vL = MAX_SPEED/1.3
+                vR = MAX_SPEED/1.3
+
+            if(goal_detected):
+                state = "orient"
+        # Could we replace with pathfinding from previous lab?
+        elif state == "orient":
+            vL, vR, heading_error = goal_angle(gx)
+            if gx == 0 and gy == 0:
+                delay(20, "exploration")
+            else:
+                counter = 0
+            if not heading_error:
+                state = "approach"
+        elif state == "approach":
+            if (not (gx == 0 and gy == 0)) and (gx < 110 or gx > 130):
+                state = "orient"
+            if lidar.getRangeImage()[333] > 1.3:
+                vL = MAX_SPEED/5
+                vR = MAX_SPEED/5
+            else:
+                vL = 0
+                vR = 0
+                state = "stabilize"
+        elif state == "stabilize":
+            delay(30, "openGripper")
+        elif state == "openGripper":
+            robot_parts["gripper_left_finger_joint"].setPosition(0.045)
+            robot_parts["gripper_right_finger_joint"].setPosition(0.045)
+            if left_gripper_enc.getValue()>=0.044:
+                state = "setArmToReady"
+        elif state == "setArmToReady":
+            
+            manipulate_to([1.2,
+                           -0.25,
+                           0.78 + arm_joints[2] ])
+            state = "movingArmToReady"
+        elif state == "movingArmToReady":
+            delay(100, "forward")
+        elif state == "forward":
+            vL= MAX_SPEED/4
+            vR= MAX_SPEED/4
+            delay(100, "closeGripper")
+        elif state == "closeGripper":
+            vL = 0
+            vR = 0
+            robot_parts["gripper_left_finger_joint"].setPosition(0)
+            robot_parts["gripper_right_finger_joint"].setPosition(0)
+            delay(40, "lift")    
+        elif state == "lift":
+            manipulate_to([0.9,
+                           -0.05,
+                           0.82 + arm_joints[2] ])
+            state = "backOut"
+        elif state == "backOut":
+            vL= -MAX_SPEED/2
+            vR= -MAX_SPEED/2
+            delay(100, "setArmToBasket")
+        elif state == "setArmToBasket":
+            vL = 0
+            vR = 0
+            manipulate_to([0.25,
+                           0.05,
+                           0.5 + arm_joints[2] ])
+            state = "movingArmToBasket"
+        elif state == "movingArmToBasket":
+            delay(100, "releaseObject")
+        elif state == "releaseObject":
+            robot_parts["gripper_left_finger_joint"].setPosition(0.045)
+            robot_parts["gripper_right_finger_joint"].setPosition(0.045)
+            delay(20, "stowArm")
+        elif state == "stowArm":
+
+            manipulate_to([0.0, -0.2, 1.6])
+            state = "exploration"
     
     # Odometer coardinates:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
@@ -506,52 +481,9 @@ while robot.step(timestep) != -1:
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps)
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-
+    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     #Lidar Map:
     lidar_map(pose_x, pose_y, pose_theta, lidar)
-    if state == "exploration":
-        pass
-    if state == "navigation":
-        pass
-    elif state == "openGripper":
-        robot_parts["gripper_left_finger_joint"].setPosition(0.045)
-        robot_parts["gripper_right_finger_joint"].setPosition(0.045)
-        if left_gripper_enc.getValue()>=0.044:
-            state = "setArmToTarget"
-    elif state == "setArmToTarget":
-        manipulate_to([x,y,z], )
-        state = "movingArmToTarget"
-    elif state == "movingArmToTarget":
-        if (counter < 50):
-            counter += 1
-        else:
-            state = "closeGripper"
-            counter = 0
-    elif state == "closeGripper":
-        robot_parts["gripper_left_finger_joint"].setPosition(0)
-        robot_parts["gripper_right_finger_joint"].setPosition(0)
-        if right_gripper_enc.getValue()<=0.005:
-            state = "setArmToBasket"
-    elif state == "setArmToBasket":
-        manipulate_to([0.3, 0, 1])
-        state = "movingArmToBasket"
-    elif state == "movingArmToBasket":
-        if (counter < 50):
-            counter += 1
-        else:
-            state = "releaseObject"
-            counter = 0
-    elif state == "releaseObject":
-        robot_parts["gripper_left_finger_joint"].setPosition(0.045)
-        robot_parts["gripper_right_finger_joint"].setPosition(0.045)
-        if left_gripper_enc.getValue()>=0.044:
-            state = "stowArm"
-    elif state == "stowArm":
-        manipulate_to([0.3, 0, 1.6])
-        state = "exploration"
-
-    
-        
         
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
