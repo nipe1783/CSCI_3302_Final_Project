@@ -14,6 +14,7 @@ import matplotlib.pyplot
 from mpl_toolkits.mplot3d import Axes3D
 import cv2
 import heapq
+import random
 
 #Initialization
 print("=== Initializing Grocery Shopper...")
@@ -101,7 +102,8 @@ lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readin
 # ------------------------------------------------------------------
 # Robot Modes
 # mode = "manual"
-mode = "roam"
+#mode = "roam"
+mode = "planning"
 # state = "openGripper"
 state = "exploration"
 counter = 0
@@ -376,6 +378,80 @@ def manipulate_to(target_position, target_orientation=None):
 # Test statement/sanity check
 # manipulate_to([0.2, 0.3, 1.0])
 
+#k = 500
+#delta_q = 0.5
+#goal_bias = 0.1
+
+class Node:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.parent = None
+        
+def get_nearest_node(node_list, q_point):
+
+    nearest_node = None
+    min_distance = float('inf')
+    
+    for node in node_list:
+        distance = np.sqrt((node.x - q_point.x)**2 + (node.y - q_point.y)**2)
+        if distance < min_distance:
+            min_distance = distance
+            nearest_node = node
+                
+    return nearest_node, min_distance
+    
+def steer(from_node, to_node, delta_q):
+    dx = to_node.x - from_node.x
+    dy = to_node.y - from_node.y
+    
+    distance = np.sqrt(dx**2 + dy**2)
+    if distance <= delta_q:
+        return to_node.x, to_node.y
+        
+    else:
+        theta = np.arctan2(dy, dx)
+        new_x = from_node.x + delta_q * np.cos(theta)
+        new_y = from_node.y + delta_q * np.sin(theta)
+        return new_x, new_y
+        
+def check_path_valid(start, goal, world_height, world_width):
+    # Check if start and goal are inside the world boundaries
+    if (start.x < 0 or start.x > world_height or
+        start.y < 0 or start.y > world_width or
+        goal.x < 0 or goal.x > world_height or
+        goal.y < 0 or goal.y > world_width):
+        # If either start or goal is outside the world boundaries, the path is not valid
+        return False
+
+    # If both start and goal are inside the world boundaries, the path is valid
+    return True
+
+
+def rrt(start, goal, world_height, world_width, delta_q, k, goal_bias):
+    node_list = [start]
+    
+    for i in range(k):
+        if goal is not None and np.random.rand() < goal_bias:
+            q_rand = Node(goal[0], goal[1])
+        else:
+            q_rand = Node(np.random.uniform(0, world_height), np.random.uniform(0, world_width))
+       
+        q_near, min_distance = get_nearest_node(node_list, q_rand)     
+        
+        q_new_x, q_new_y = steer(q_near, q_rand, delta_q) 
+          
+        if check_path_valid(q_near, Node(q_new_x, q_new_y), world_height, world_width):
+            q_new_node = Node(q_new_x, q_new_y)
+            q_new_node.parent = q_near
+            node_list.append(q_new_node)
+        
+        # Check if goal reached
+        if goal is not None and np.sqrt((q_new_node.x - goal[0])**2 + (q_new_node.y - goal[1])**2) < delta_q:
+          return node_list
+    return node_list
+  
+
 # Main Loop
 while robot.step(timestep) != -1:
     gx, gy, goal_detected = goal_detect()
@@ -474,6 +550,13 @@ while robot.step(timestep) != -1:
 
             manipulate_to([0.0, -0.2, 1.6])
             state = "exploration"
+            
+    if mode == "planning":
+        start = Node(pose_x, pose_y)
+        goal = (world_height - 5, world_width/2)
+
+        path = rrt(start, goal, world_height, world_width, delta_q = 0.5, k = 500, goal_bias = 0.1)
+        
     
     # Odometer coardinates:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
