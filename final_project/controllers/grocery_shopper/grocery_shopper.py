@@ -97,6 +97,24 @@ lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
 
+item0 = [2.6202858632038093, 3.58914, 0.5748653025126261]
+item1 = [11.547000914636712, -8.505688675100652, 0.03486531467979112]
+item2 = [-1.3296063450130449, -4.05309, 0.5748653625599697]
+item3 = [2.3409306731047352, -3.53294, 0.5748654067999813]
+item4 = [-0.8647696076431266, 0.3606378757006146, 0.5748653700715028]
+item5 = [-2.773024136796192, 0.3100000000000003, 0.5748653025126261]
+item6 = [0.7772010699377632, 0.3700000000000001, 0.5748652878199019]
+item7 = [-2.6650533601864694, 0.2, 1.0748653705132794]
+item8 = [-3.26060345214566, 3.629999999999986, 1.0748653543083286]
+item9 = [5.67997938546148, 7.16031, 1.0748654067999996]
+item10 = [3.504540887533399, 3.58914, 1.074864218478985]
+item11 = [3.4994646114633245, 7.16914, 1.07486535924194]
+goal_list = [item0, item1, item2, item3, item4, item5, item6, item7, item8, item9, item10, item11]
+
+for goal in goal_list:
+    goal[0] = world_height/2  - goal[0]
+    goal[1] = world_width/2 - goal[1] 
+
 
 # ------------------------------------------------------------------
 # Robot Modes
@@ -156,6 +174,24 @@ def position_gps(gps):
 
     return pose_x, pose_y, pose_theta
 
+def goal_map(goal_list):
+
+    for goal in goal_list:
+
+        wx = goal[0]
+        wy = goal[1]
+        mx = abs(int(wx * world_to_map_height))
+        my = abs(int(wy * world_to_map_width))
+        display.setColor(int(0xFFFF00))
+        display.drawPixel(my + 50,mx)
+
+def location_map(pose_x, pose_y):
+
+    mx = abs(int(pose_x * world_to_map_height))
+    my = abs(int(pose_y * world_to_map_width))
+    display.setColor(int(0xFFFFFF))
+    display.drawPixel(my + 50,mx)
+
 def lidar_map(pose_x, pose_y, pose_theta, lidar):
 
     lidar_sensor_readings = lidar.getRangeImage()
@@ -173,7 +209,6 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
         rho = math.sqrt( rx** 2+ ry**2)
 
         alpha = lidar_offsets[i]
-
         # point location in world coa:
         wx = math.cos(pose_theta) * rx - math.sin(pose_theta) * ry + pose_x
         wy = math.sin(pose_theta) * rx + math.cos(pose_theta) * ry + pose_y
@@ -195,8 +230,8 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
             if map[mx, my] < 1:
                 map[mx, my] += 0.005
             g = int(map[mx, my] * 255)
-            # display.setColor(g*(256**2) + g*256 + g)
-            display.setColor(int(0xFF0000))
+            display.setColor(g*(256**2) + g*256 + g)
+            display.setColor(g)
             display.drawPixel(my + 50,mx)
 
 configuration_space = np.zeros(shape=[360,360])
@@ -308,7 +343,6 @@ def goal_angle(gx):
         heading = False
     
     return vL, vR, heading
-
 
 keyboard = robot.getKeyboard()
 keyboard.enable(timestep)
@@ -423,8 +457,10 @@ while robot.step(timestep) != -1:
                 vL = 0
                 vR = 0
                 state = "stabilize"
+
         elif state == "stabilize":
             delay(30, "openGripper")
+
         elif state == "openGripper":
             robot_parts["gripper_left_finger_joint"].setPosition(0.045)
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
@@ -481,9 +517,11 @@ while robot.step(timestep) != -1:
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps)
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
+    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     #Lidar Map:
     lidar_map(pose_x, pose_y, pose_theta, lidar)
+    goal_map(goal_list)
+    location_map(pose_x, pose_y)
         
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
