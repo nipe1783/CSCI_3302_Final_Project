@@ -101,7 +101,7 @@ lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readin
 # ------------------------------------------------------------------
 # Robot Modes
 # mode = "manual"
-mode = "roam"
+mode = "testing"
 # state = "openGripper"
 state = "exploration"
 counter = 0
@@ -286,35 +286,15 @@ def goal_detect():
         gy = int(M['m01'] / M['m00'])
         return gx, gy, True
     else:
-        return 0, 0, False
-
-def goal_angle(gx):
-
-    heading = True
-
-    # rotate robot so goal is at center of image.
-    if gx < 110:
-        # robot rotate left
-        vL = -MAX_SPEED/5
-        vR = MAX_SPEED/15
-    elif gx > 130:
-        # robot rotate right
-        vL = MAX_SPEED/15
-        vR = -MAX_SPEED/5
-    else:
-        # go forward
-        vL = 0
-        vR = 0
-        heading = False
-    
-    return vL, vR, heading
+        return -1, -1, False
 
 
 keyboard = robot.getKeyboard()
 keyboard.enable(timestep)
 
-def mode_manual(vL, vR):
-
+def mode_manual():
+    global vL
+    global vR
     key = keyboard.getKey()
     while(keyboard.getKey() != -1): pass
     if key == keyboard.LEFT :
@@ -338,9 +318,22 @@ def mode_manual(vL, vR):
     else: # slow down
         vL *= 0.75
         vR *= 0.75
-    return vL, vR
 
-def manipulate_to(target_position, target_orientation=None):
+def ik_arm(target_position, target_orientation=None, initial = None):
+    target_frame = np.eye(4)
+    target_frame[:3, 3] = target_position
+    if target_orientation is not None:
+        target_frame[:3, :3] = target_orientation
+        print("orientation given")
+    global arm_joints
+    if initial is None:
+        initial = arm_joints
+    # else:
+        # target_frame[:3, :3] = [[0,1,0],[1,0,0],[0,0,1]]
+    return my_chain.inverse_kinematics_frame(target_frame, initial_position=initial)
+
+
+def manipulate_to(newPose):
     """Use IK to calculate position and then deliver position to joints
 
         Parameters
@@ -349,22 +342,13 @@ def manipulate_to(target_position, target_orientation=None):
             3 value array with desired position
         target_Orientation: numpy.array
             An optional 3x3 array for orientation at destination
-        Output
         ---------
+        Returns
         Null
     """
-    # Note: +x is forword
-    target_frame = np.eye(4)
-    target_frame[:3, 3] = target_position
-    if target_orientation is not None:
-        target_frame[:3, :3] = target_orientation
-    # else:
-        # target_frame[:3, :3] = [[0,1,0],[1,0,0],[0,0,1]]
     global arm_joints
-    arm_joints = my_chain.inverse_kinematics_frame(target_frame, initial_position=arm_joints)
-    print(target_position)
-    print(arm_joints)
-    robot_parts["torso_lift_joint"].setPosition(arm_joints[2])
+    arm_joints = newPose
+    # print(arm_joints)
     robot_parts["arm_1_joint"].setPosition(arm_joints[4])
     robot_parts["arm_2_joint"].setPosition(arm_joints[5])
     robot_parts["arm_3_joint"].setPosition(arm_joints[6])
@@ -374,12 +358,20 @@ def manipulate_to(target_position, target_orientation=None):
     robot_parts["arm_7_joint"].setPosition(arm_joints[10])
     
 # Test statement/sanity check
-# manipulate_to([0.2, 0.3, 1.0])
+
 
 # Main Loop
 while robot.step(timestep) != -1:
     gx, gy, goal_detected = goal_detect()
-    if mode == "roam":
+    if mode == "manual":
+        mode_manual()
+    elif mode == "testing":
+        if counter == 0:
+            manipulate_to(ik_arm([0.6, 0.1, 1.2], target_orientation = [[-1,0,0],
+                                                                        [0,-1,0],
+                                                                        [0,0,-1]]))
+        counter +=1 
+    elif mode == "roam":
         if state == "exploration":
             # Function to randomly explore map until goal is detected.
             # print("goal_detected: ", goal_detected)
@@ -406,15 +398,26 @@ while robot.step(timestep) != -1:
                 state = "orient"
         # Could we replace with pathfinding from previous lab?
         elif state == "orient":
-            vL, vR, heading_error = goal_angle(gx)
             if gx == 0 and gy == 0:
                 delay(20, "exploration")
+                continue
             else:
                 counter = 0
-            if not heading_error:
+            if gx < 110:
+                # robot rotate left
+                vL = -MAX_SPEED/5
+                vR = MAX_SPEED/15
+            elif gx > 130:
+                # robot rotate right
+                vL = MAX_SPEED/15
+                vR = -MAX_SPEED/5
+            else:
+                # go forward
+                vL = 0
+                vR = 0
                 state = "approach"
         elif state == "approach":
-            if (not (gx == 0 and gy == 0)) and (gx < 110 or gx > 130):
+            if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
                 state = "orient"
             if lidar.getRangeImage()[333] > 1.3:
                 vL = MAX_SPEED/5
@@ -432,9 +435,9 @@ while robot.step(timestep) != -1:
                 state = "setArmToReady"
         elif state == "setArmToReady":
             
-            manipulate_to([1.2,
+            manipulate_to(ik_arm([1.2,
                            -0.25,
-                           0.78 + arm_joints[2] ])
+                           0.78 + arm_joints[2] ]))
             state = "movingArmToReady"
         elif state == "movingArmToReady":
             delay(100, "forward")
@@ -449,9 +452,9 @@ while robot.step(timestep) != -1:
             robot_parts["gripper_right_finger_joint"].setPosition(0)
             delay(40, "lift")    
         elif state == "lift":
-            manipulate_to([0.9,
+            manipulate_to(ik_arm([0.9,
                            -0.05,
-                           0.82 + arm_joints[2] ])
+                           0.82 + arm_joints[2] ]))
             state = "backOut"
         elif state == "backOut":
             vL= -MAX_SPEED/2
@@ -460,9 +463,9 @@ while robot.step(timestep) != -1:
         elif state == "setArmToBasket":
             vL = 0
             vR = 0
-            manipulate_to([0.25,
+            manipulate_to(ik_arm([0.25,
                            0.05,
-                           0.5 + arm_joints[2] ])
+                           0.5 + arm_joints[2] ]))
             state = "movingArmToBasket"
         elif state == "movingArmToBasket":
             delay(100, "releaseObject")
@@ -472,7 +475,7 @@ while robot.step(timestep) != -1:
             delay(20, "stowArm")
         elif state == "stowArm":
 
-            manipulate_to([0.0, -0.2, 1.6])
+            manipulate_to(ik_arm([0.0, -0.2, 1.6]))
             state = "exploration"
     
     # Odometer coardinates:
@@ -481,7 +484,7 @@ while robot.step(timestep) != -1:
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps)
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
+    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     #Lidar Map:
     lidar_map(pose_x, pose_y, pose_theta, lidar)
         
