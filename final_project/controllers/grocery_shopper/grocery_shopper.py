@@ -274,6 +274,7 @@ def goal_detect():
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     lower_yellow = np.array([15,200,200])
     upper_yellow = np.array([40,255,255])
+
     mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
     # apply Gaussian Blur
@@ -313,6 +314,17 @@ def goal_detect():
         plt.show()
 
     if len(filtered_contours) > 0:
+
+        yellow = [255.0, 255.0, 0.0]
+        for object in camera.getRecognitionObjects():
+            color = object.getColors()
+            color[0] = color[0]*255
+            color[1] = color[1]*255
+            color[2] = color[2]*255
+            # print(color[0], color[1], color[2])
+            if (color[0] == yellow[0] and color[1] == yellow[1] and color[2] == yellow[2]):
+                print(object)
+
         # location of first goal detected
         c = contours[0]
         M = cv2.moments(c)
