@@ -74,6 +74,10 @@ lidar = robot.getDevice('Hokuyo URG-04LX-UG01')
 lidar.enable(timestep)
 lidar.enablePointCloud()
 
+lidar2 = robot.getDevice('Hokuyo URG-04LX-UG02')
+lidar2.enable(timestep)
+lidar2.enablePointCloud()
+
 # Enable display
 display = robot.getDevice("display")
 
@@ -268,7 +272,7 @@ def obstacle_detected_roam():
 
     return turn_left, turn_right
 
-def goal_detect():
+def goal_detect(gx, gy):
 
     img = np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4))
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -314,17 +318,24 @@ def goal_detect():
         plt.show()
 
     if len(filtered_contours) > 0:
-
         # location of first goal detected
         c = filtered_contours[0]
         M = cv2.moments(c)
         gx = int(M['m10'] / M['m00'])
         gy = int(M['m01'] / M['m00'])
+        # print(gx, gy)
+        # plt.imshow(smoothed_copy)
+        # plt.show()
         return gx, gy, True
     else:
-        return 0, 0, False
+        return gx, gy, False
     
 def goal_state():
+
+    # point_cloud_sensor_reading2 = lidar2.getPointCloud()
+    # point_cloud_sensor_reading2 = point_cloud_sensor_reading2[83:len(point_cloud_sensor_reading2)-83]
+    # point = point_cloud_sensor_reading2[250]
+    # print(point.x, point.y, point.z)
     yellow = [255.0, 255.0, 0.0]
     for object in camera.getRecognitionObjects():
         color = object.getColors()
@@ -343,12 +354,12 @@ def goal_angle(gx):
     # rotate robot so goal is at center of image.
     if gx < 110:
         # robot rotate left
-        vL = -MAX_SPEED/5
-        vR = MAX_SPEED/15
+        vL = MAX_SPEED/15
+        vR = MAX_SPEED/10
     elif gx > 130:
         # robot rotate right
-        vL = MAX_SPEED/15
-        vR = -MAX_SPEED/5
+        vL = MAX_SPEED/10
+        vR = MAX_SPEED/15
     else:
         # go forward
         vL = 0
@@ -356,6 +367,82 @@ def goal_angle(gx):
         heading = False
     
     return vL, vR, heading
+
+def yaw_error(gx):
+     # gx = 0 (left) 240  (right)
+     # head__1_joint = 1.24 (left) -1.24 (right) 
+    # Corrects camera yaw angle to center blob in camera. Also Will move in the direction of the blob to make it larger.
+    yaw_correct = False
+    if gx < 119:
+        # camera rotate left
+        position = robot_parts["head_1_joint"].getTargetPosition()
+        position += .005
+        robot_parts["head_1_joint"].setPosition(position)
+    elif gx > 121:
+        # camera rotate right
+        position = robot_parts["head_1_joint"].getTargetPosition()
+        position -= .005
+        robot_parts["head_1_joint"].setPosition(position)
+    else:
+        yaw_correct = True
+
+    return yaw_correct
+
+def pitch_error(gy):
+
+    # gy = 0 (top) 134 (bottom)
+    # head__2_joint = -.98 (down) .79 (up) 
+    pitch_correct = False
+
+    if gy < 61:
+        # camera rotate up
+        position = robot_parts["head_2_joint"].getTargetPosition()
+        position += .005
+        robot_parts["head_2_joint"].setPosition(position)
+    elif gy > 63:
+        # camera rotate down
+        position = robot_parts["head_2_joint"].getTargetPosition()
+        position -= .005
+        robot_parts["head_2_joint"].setPosition(position)
+    else:
+        # go forward
+        pitch_correct = True
+
+    return pitch_correct
+
+def goal_locate():
+
+    point_cloud_sensor_reading = lidar2.getPointCloud()
+    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
+    point_cloud_sensor_reading = point_cloud_sensor_reading[252:260]
+    for i, point in enumerate(point_cloud_sensor_reading):
+
+        # x, y, z are relative to lidar point origin.
+        rx = point.x
+        ry = point.y
+        rz = point.z
+        rho = math.sqrt( rx** 2+ ry**2)
+
+        # point location in world coa:
+        wx = math.cos(pose_theta) * rx - math.sin(pose_theta) * ry + pose_x
+        wy = math.sin(pose_theta) * rx + math.cos(pose_theta) * ry + pose_y
+
+        if wx >= world_height:
+            wx = world_height - .001
+        elif wx <= 0:
+            wx = .001
+        if  wy >= world_width:
+            wy = world_width - .001
+        elif wy <= 0:
+            wy = .001
+        if abs(rho) < LIDAR_SENSOR_MAX_RANGE:
+            mx = abs(int(wx * world_to_map_height))
+            my = abs(int(wy * world_to_map_width))
+            # print("wx: ", wx, " wy: ", wy, " mx: ", mx, " my: ", my)
+            # You will eventually REPLACE the following lines with a more robust version of the map
+            # with a grayscale drawing containing more levels than just 0 and 1.
+            display.setColor(int(0xFFC0CB))
+            display.drawPixel(my + 50,mx)
 
 keyboard = robot.getKeyboard()
 keyboard.enable(timestep)
@@ -409,8 +496,8 @@ def manipulate_to(target_position, target_orientation=None):
         # target_frame[:3, :3] = [[0,1,0],[1,0,0],[0,0,1]]
     global arm_joints
     arm_joints = my_chain.inverse_kinematics_frame(target_frame, initial_position=arm_joints)
-    print(target_position)
-    print(arm_joints)
+    # print(target_position)
+    # print(arm_joints)
     robot_parts["torso_lift_joint"].setPosition(arm_joints[2])
     robot_parts["arm_1_joint"].setPosition(arm_joints[4])
     robot_parts["arm_2_joint"].setPosition(arm_joints[5])
@@ -424,8 +511,10 @@ def manipulate_to(target_position, target_orientation=None):
 # manipulate_to([0.2, 0.3, 1.0])
 
 # Main Loop
+gx = 0
+gy = 0
 while robot.step(timestep) != -1:
-    gx, gy, goal_detected = goal_detect()
+    gx, gy, goal_detected = goal_detect(gx, gy)
     if mode == "roam":
         if state == "exploration":
             # Function to randomly explore map until goal is detected.
@@ -460,7 +549,19 @@ while robot.step(timestep) != -1:
             else:
                 counter = 0
             if not heading_error:
-                state = "approach"
+                
+                yaw_correct = yaw_error(gx)
+
+                if yaw_correct:
+
+                    pitch_correct = pitch_error(gy)
+
+                    if pitch_correct:
+                        goal_location = goal_locate()
+                        vL = 0
+                        vR = 0
+                # state = "approach"
+               
         elif state == "approach":
             if (not (gx == 0 and gy == 0)) and (gx < 110 or gx > 130):
                 state = "orient"
