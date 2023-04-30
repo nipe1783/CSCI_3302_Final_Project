@@ -319,25 +319,25 @@ def goal_detect():
 
     if len(filtered_contours) > 0:
 
-        yellow = [255.0, 255.0, 0.0]
-        for object in camera.getRecognitionObjects():
-            color = object.getColors()
-            color[0] = color[0]*255
-            color[1] = color[1]*255
-            color[2] = color[2]*255
-            # print(color[0], color[1], color[2])
-            if (color[0] == yellow[0] and color[1] == yellow[1] and color[2] == yellow[2]):
-                print(object)
-
         # location of first goal detected
-        c = contours[0]
+        c = filtered_contours[0]
         M = cv2.moments(c)
-
         gx = int(M['m10'] / M['m00'])
         gy = int(M['m01'] / M['m00'])
         return gx, gy, True
     else:
         return -1, -1, False
+def goal_state():
+    yellow = [255.0, 255.0, 0.0]
+    for object in camera.getRecognitionObjects():
+        color = object.getColors()
+        color[0] = color[0]*255
+        color[1] = color[1]*255
+        color[2] = color[2]*255
+        # print(color[0], color[1], color[2])
+        if (color[0] == yellow[0] and color[1] == yellow[1] and color[2] == yellow[2]):
+
+            return object.getPosition(), object.getOrientation()
 
 keyboard = robot.getKeyboard()
 keyboard.enable(timestep)
@@ -459,10 +459,11 @@ while robot.step(timestep) != -1:
                 vR = MAX_SPEED/1.3
 
             if(goal_detected):
+                goal_location, goal_orientation = goal_state()
                 state = "orient"
         # Could we replace with pathfinding from previous lab?
         elif state == "orient":
-            if gx == 0 and gy == 0:
+            if gx == -1 and gy == -1:
                 delay(20, "exploration")
                 continue
             else:
