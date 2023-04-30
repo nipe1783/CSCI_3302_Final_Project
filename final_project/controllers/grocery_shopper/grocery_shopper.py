@@ -14,6 +14,7 @@ import matplotlib.pyplot
 from mpl_toolkits.mplot3d import Axes3D
 import cv2
 import heapq
+from rrt import rrt_star
 
 #Initialization
 print("=== Initializing Grocery Shopper...")
@@ -119,7 +120,8 @@ for goal in goal_list:
 # ------------------------------------------------------------------
 # Robot Modes
 # mode = "manual"
-mode = "testing"
+# mode = "testing"
+mode = "autonomous"
 # state = "openGripper"
 state = "exploration"
 counter = 0
@@ -132,9 +134,11 @@ world_to_map_height = map_height / world_height
 
 map = np.zeros(shape=[map_height,map_width])
 
-active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False, False]
-arm_joints =  [0, 0, 0.35, 0,  0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 0, 0, 0.045]
+heights = [0.575, 1.075]
+active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False]
+arm_joints =  [0, 0, 0.35, 0,  0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 0, 0]
 my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_links)
+arm_queue = []
 # curr_pose = my_chain.forward_kinematics([1] * 13)
 # target_orientation = [0.5, -0.5, 2.0]
 # target_position = [curr_pose[0][3], curr_pose[1][3], curr_pose[2][3]]
@@ -365,18 +369,29 @@ def mode_manual():
         vL *= 0.75
         vR *= 0.75
 
-def ik_arm(target_position, target_orientation=None, initial = None):
-    target_frame = np.eye(4)
-    target_frame[:3, 3] = target_position
-    if target_orientation is not None:
-        target_frame[:3, :3] = target_orientation
-        print("orientation given")
+def ik_arm(target_position, target_orientation=None, orientation_mode = None, initial = None, angle = None):
     global arm_joints
     if initial is None:
         initial = arm_joints
     # else:
         # target_frame[:3, :3] = [[0,1,0],[1,0,0],[0,0,1]]
-    return my_chain.inverse_kinematics_frame(target_frame, initial_position=initial)
+    if angle is not None:
+        angle = math.pi/2-angle
+        rotate = np.array([[1,0,0],
+                            [0, math.cos(-math.pi/2), math.sin(-math.pi/2)],
+                            [0, -math.sin(-math.pi/2), math.cos(-math.pi/2)]])
+        orientation = np.array([[math.cos(angle), math.sin(angle), 0],
+                                [-math.sin(angle), math.cos(angle), 0],
+                                [0,0,1]])
+        target_orientation = np.dot(orientation,rotate)
+        return my_chain.inverse_kinematics(target_position,target_orientation=target_orientation, orientation_mode="all" , initial_position=initial)
+    elif target_orientation is not None:
+        # print("orientation given")
+        if orientation_mode is None:
+            orientation_mode = "all"
+        return my_chain.inverse_kinematics(target_position,target_orientation=target_orientation, orientation_mode=orientation_mode , initial_position=initial)
+    else:
+        return my_chain.inverse_kinematics(target_position, initial_position=initial)
 
 
 def manipulate_to(newPose):
@@ -405,19 +420,22 @@ def manipulate_to(newPose):
     
 # Test statement/sanity check
 
-
+angle = -1
 # Main Loop
+
 while robot.step(timestep) != -1:
     gx, gy, goal_detected = goal_detect()
     if mode == "manual":
         mode_manual()
     elif mode == "testing":
-        if counter == 0:
-            manipulate_to(ik_arm([0.6, 0.1, 1.2], target_orientation = [[-1,0,0],
-                                                                        [0,-1,0],
-                                                                        [0,0,-1]]))
-        counter +=1 
-    elif mode == "roam":
+        if counter % 10 == 0:
+            angle += 0.05
+            print(angle)
+            
+                                        
+            manipulate_to(ik_arm([0.6, 0.5, 1.2], angle=angle))
+        counter += 1
+    elif mode == "autonomous":
         if state == "exploration":
             # Function to randomly explore map until goal is detected.
             # print("goal_detected: ", goal_detected)
@@ -465,7 +483,7 @@ while robot.step(timestep) != -1:
         elif state == "approach":
             if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
                 state = "orient"
-            if lidar.getRangeImage()[333] > 1.3:
+            if lidar.getRangeImage()[333] > 1:
                 vL = MAX_SPEED/5
                 vR = MAX_SPEED/5
             else:
@@ -475,24 +493,27 @@ while robot.step(timestep) != -1:
 
         elif state == "stabilize":
             delay(30, "openGripper")
-
         elif state == "openGripper":
             robot_parts["gripper_left_finger_joint"].setPosition(0.045)
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
             if left_gripper_enc.getValue()>=0.044:
                 state = "setArmToReady"
         elif state == "setArmToReady":
-            
-            manipulate_to(ik_arm([1.2,
-                           -0.25,
-                           0.78 + arm_joints[2] ]))
+            angle = (123-gx)/120.
+            print(angle)
+            arm_queue = []
+            points = np.linspace([0.2*math.cos(angle), 0.2*math.sin(angle), 0.7 + arm_joints[2]], [math.cos(angle), math.sin(angle), 0.7 + arm_joints[2]], 15)
+            for i in points:
+                arm_queue.append(ik_arm(i, angle=angle))
             state = "movingArmToReady"
         elif state == "movingArmToReady":
-            delay(100, "forward")
-        elif state == "forward":
-            vL= MAX_SPEED/4
-            vR= MAX_SPEED/4
-            delay(100, "closeGripper")
+            if counter % 10 == 0:
+                if len(arm_queue) > int(counter/10):
+                    manipulate_to(arm_queue[int(counter/10)])
+                else:
+                    state = "closeGripper"
+                    counter = -1
+            counter += 1
         elif state == "closeGripper":
             vL = 0
             vR = 0
@@ -500,9 +521,7 @@ while robot.step(timestep) != -1:
             robot_parts["gripper_right_finger_joint"].setPosition(0)
             delay(40, "lift")    
         elif state == "lift":
-            manipulate_to(ik_arm([0.9,
-                           -0.05,
-                           0.82 + arm_joints[2] ]))
+            manipulate_to(ik_arm([0.9, -0.05, 0.82 + arm_joints[2] ]))
             state = "backOut"
         elif state == "backOut":
             vL= -MAX_SPEED/2
@@ -511,12 +530,17 @@ while robot.step(timestep) != -1:
         elif state == "setArmToBasket":
             vL = 0
             vR = 0
-            manipulate_to(ik_arm([0.25,
-                           0.05,
-                           0.5 + arm_joints[2] ]))
+            basket = ik_arm([0.25, 0.05, 0.4 + arm_joints[2] ])
+            arm_queue = np.linspace(arm_joints, basket, 20)
             state = "movingArmToBasket"
         elif state == "movingArmToBasket":
-            delay(100, "releaseObject")
+            if counter % 5 == 0:
+                if len(arm_queue) > int(counter/5):
+                    manipulate_to(arm_queue[int(counter/5)])
+                else:
+                    state = "releaseObject"
+                    counter = -1
+            counter += 1
         elif state == "releaseObject":
             robot_parts["gripper_left_finger_joint"].setPosition(0.045)
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
