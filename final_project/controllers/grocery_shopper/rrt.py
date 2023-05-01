@@ -21,6 +21,15 @@ class Node:
             cost += math.dist(node.point, node.parent.point)
             node = node.parent
         return cost
+    def getPath(self):
+        node = self
+        waypoints = []
+        while node.parent is not None:
+            waypoints.append(node.point)
+            node = node.parent
+        waypoints.append(node.point)
+        waypoints.reverse()
+        return waypoints
         
 
 def get_random_valid_vertex(state_is_valid, bounds):
