@@ -10,7 +10,7 @@ class Node:
     """
     Node for RRT Algorithm. This is what you'll make your graph with!
     """
-    def __init__(self, pt, cost, parent=None):
+    def __init__(self, pt, parent=None):
         self.point = pt # n-Dimensional point
         self.parent = parent # Parent node
         self.path_from_parent = [] # List of points along the way from the parent node (for edge's collision checking)
@@ -90,7 +90,7 @@ def check_path_valid(path, state_is_valid):
     # TODO: Your Code Here
     raise NotImplementedError
 
-def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_q, r=None):
+def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_q, r=None, state_is_goal=None):
     '''
     TODO: Implement the RRT algorithm here, making use of the provided state_is_valid function.
     RRT algorithm.
@@ -162,6 +162,9 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
                 #         return node_list
                 if goal_point is not None and math.dist(goal_point, point) == 0:
                     return node_list
+                if state_is_goal is not None:
+                    if state_is_goal(point):
+                        return node_list
                 break
     # if goal_point == None:
     #     return node_list
@@ -171,5 +174,5 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
     
     # TODO: Your code here
     # TODO: Make sure to add every node you create onto node_list, and to set node.parent and node.path_from_parent for each
-
+    print("No goal given or path not found")
     return node_list
