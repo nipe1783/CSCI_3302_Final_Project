@@ -5,15 +5,12 @@
 from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard, Display
 import math
 import numpy as np
+import copy
 from scipy.signal import convolve2d
 from matplotlib import pyplot as plt
 import ikpy
 import ikpy.chain
-import ikpy.utils.plot as plot
-import matplotlib.pyplot
-from mpl_toolkits.mplot3d import Axes3D
 import cv2
-import heapq
 from rrt import rrt_star
 
 #Initialization
@@ -78,6 +75,10 @@ lidar.enablePointCloud()
 # Enable display
 display = robot.getDevice("display")
 
+# Enable keyboard (optional)
+keyboard = robot.getKeyboard()
+keyboard.enable(timestep)
+
 # Environment dimesnions:
 # Width: 16.1 m
 # Height: 30 m
@@ -97,7 +98,7 @@ vR = 0
 lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
-
+[1.6668519798569494, -0.20284982283080194, -0.18583268587895996]
 item0 = [2.6202858632038093, 3.58914, 0.5748653025126261]
 item1 = [11.547000914636712, -8.505688675100652, 0.03486531467979112]
 item2 = [-1.3296063450130449, -4.05309, 0.5748653625599697]
@@ -120,7 +121,6 @@ for goal in goal_list:
 # ------------------------------------------------------------------
 # Robot Modes
 # mode = "manual"
-# mode = "testing"
 mode = "autonomous"
 # state = "openGripper"
 state = "exploration"
@@ -133,6 +133,7 @@ world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
 map = np.zeros(shape=[map_height,map_width])
+seen = np.zeros(shape=[map_height,map_width])
 
 heights = [0.575, 1.075]
 active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False]
@@ -147,6 +148,7 @@ arm_queue = []
 # Helper Functions
 
 def delay(time, newState):
+    'countes for time iterations and then sets state to newState'
     global counter
     if (counter < time):
         counter += 1
@@ -165,7 +167,10 @@ def odometer(pose_x, pose_y, pose_theta, vL, vR, timestep):
 
     return pose_x, pose_y, pose_theta
 
+world_to_map = lambda point: [int(point[0]* world_to_map_height), int(point[1]*world_to_map_width)]
+
 def position_gps(gps):
+    'returns pose_x, pose_y, pose_theta using webots gps and compass'
     pose_x = gps.getValues()[0]
     pose_y = gps.getValues()[1]
 
@@ -196,13 +201,20 @@ def location_map(pose_x, pose_y):
     display.setColor(int(0xFFFFFF))
     display.drawPixel(my + 50,mx)
 
-def lidar_map(pose_x, pose_y, pose_theta, lidar):
+def lidar_map():
+
+    global seen
 
     lidar_sensor_readings = lidar.getRangeImage()
     lidar_sensor_readings = lidar_sensor_readings[83:len(lidar_sensor_readings)-83]
 
     point_cloud_sensor_reading = lidar.getPointCloud()
     point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
+
+    robot_XY = (int(pose_x * world_to_map_height), int(pose_y * world_to_map_height))
+    
+    pose_theta_sin = math.sin(pose_theta)
+    pose_theta_cos = math.cos(pose_theta)
 
     for i, point in enumerate(point_cloud_sensor_reading):
 
@@ -214,8 +226,8 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
 
         alpha = lidar_offsets[i]
         # point location in world coa:
-        wx = math.cos(pose_theta) * rx - math.sin(pose_theta) * ry + pose_x
-        wy = math.sin(pose_theta) * rx + math.cos(pose_theta) * ry + pose_y
+        wx = pose_theta_cos * rx - pose_theta_sin * ry + pose_x
+        wy = pose_theta_sin * rx + pose_theta_cos * ry + pose_y
 
         if wx >= world_height:
             wx = world_height - .001
@@ -225,9 +237,10 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
             wy = world_width - .001
         elif wy <= 0:
             wy = .001
-        if abs(rho) < LIDAR_SENSOR_MAX_RANGE:
-            mx = abs(int(wx * world_to_map_height))
-            my = abs(int(wy * world_to_map_width))
+        if rho < LIDAR_SENSOR_MAX_RANGE:
+            mx = int(wx * world_to_map_height)
+            my = int(wy * world_to_map_width)
+            cv2.line(seen, robot_XY, (mx, my), 1, 1)
             # print("wx: ", wx, " wy: ", wy, " mx: ", mx, " my: ", my)
             # You will eventually REPLACE the following lines with a more robust version of the map
             # with a grayscale drawing containing more levels than just 0 and 1.
@@ -238,15 +251,82 @@ def lidar_map(pose_x, pose_y, pose_theta, lidar):
             display.setColor(g)
             display.drawPixel(my + 50,mx)
 
-configuration_space = np.zeros(shape=[360,360])
-width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
+width = round(25*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
 robot_space = np.ones(shape=[width,width])
-threshold = 0.2 # we can change this value for tuning of what is considered an obstacle.
+waypoints = []
+threshold = 0.3 # we can change this value for tuning of what is considered an obstacle.
 
-def configuration_map():
-    configuration_space = convolve2d(map, robot_space, mode = "same")
+def path_planning(start, goal):
+    print(start)
+    print(goal)
+    configuration_space = copy.copy(map)
+    demo = copy.copy(map)
+    cv2.line(demo, (int(start[1] * world_to_map_width), int(start[0] * world_to_map_height)), (int(goal[1] * world_to_map_width), int(goal[0] * world_to_map_height)), 1, 2)
+    plt.imshow(demo)
+    plt.show()
+    configuration_space[map < threshold] = 0
+    configuration_space[map >= threshold] = 1
+    plt.imshow(configuration_space)
+    plt.show()
+    configuration_space = convolve2d(configuration_space, robot_space, mode = "same")
     configuration_space = (configuration_space >= 1).astype(int)
-    return configuration_space
+    plt.imshow(configuration_space)
+    plt.show()
+    validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
+    goal_check = lambda point: math.dist(point, goal) < 1
+    bounds = np.array([[0, world_height],[0, world_width]])
+    global waypoints
+    waypoints = rrt_star(bounds, validity_check, np.array(start), np.array(goal), 500, 0.5, state_is_goal=goal_check)[-1].getPath()
+    prevPoint = (int(start[1] * world_to_map_width), int(start[0] * world_to_map_height))
+    for point in waypoints:
+        point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
+        cv2.line(configuration_space, prevPoint, point, 1, 2)
+        # print(point)
+        prevPoint = point
+    plt.imshow(configuration_space)
+    plt.show()
+    plt.imshow(seen)
+    plt.show()
+    # print(waypoints)
+
+def navigation(newState):
+    global vL
+    global vR
+    global state
+    global counter
+    rho = math.dist((pose_x, pose_y), waypoints[counter])
+    alpha = (2 * math.pi + math.atan2(pose_x - waypoints[counter][0], waypoints[counter][1] - pose_y) - pose_theta) % (2 * math.pi)
+    if alpha > math.pi:
+        alpha = alpha - (2*math.pi)
+    # print(pose_theta)
+    #STEP 2: Controller
+    dX = rho
+    dTheta = 10*alpha
+
+    #STEP 3: Compute wheelspeeds
+    vL = dX - (dTheta*AXLE_LENGTH/2)
+    vR = dX + (dTheta*AXLE_LENGTH/2)
+    
+    speed = MAX_SPEED * 0.2
+    if abs(vL) > abs(vR):
+        vR = vR/abs(vL) * speed
+        if vL > 0:
+            vL = speed
+        else:
+            vL = -speed
+    else: 
+        vL = vL/abs(vR) * speed
+        if vR > 0:
+            vR = speed
+        else:
+            vR = -speed
+    if dX < 0.08:
+        if counter == len(waypoints)-1:
+            vR = 0
+            vL = 0
+            state = newState
+        else:
+            counter += 1
 
 def obstacle_detected_roam():
 
@@ -292,7 +372,7 @@ def goal_detect():
     contours, hierarchy = cv2.findContours(opening, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     # CODE FOR SHOWING OBJECTS:
-    
+
     # Draw the contours on a copy of the original image
     smoothed_copy = smoothed.copy()
     cv2.drawContours(smoothed, contours, -1, (0, 255, 0), 2)
@@ -311,14 +391,18 @@ def goal_detect():
         cy = int(M['m01'] / M['m00'])
         cv2.circle(smoothed_copy, (cx, cy), 5, (0, 0, 255), -1)
 
-    key = keyboard.getKey()
-    while(keyboard.getKey() != -1): pass
-    if key == ord('S'):
-        plt.imshow(smoothed_copy)
-        plt.show()
+    # key = keyboard.getKey()
+    # while(keyboard.getKey() != -1): pass
+    # if key == ord('S'):
+    #     plt.imshow(smoothed_copy)
+    #     plt.show()
 
     if len(filtered_contours) > 0:
-
+        # cv2.imshow('orig', img)
+        # cv2.imshow('mask', mask)
+        # cv2.imshow('smooth', smoothed)
+        # cv2.imshow('contours', smoothed_copy)
+        # cv2.waitKey(-1)  # Wait until a key is pressed to exit the program
         # location of first goal detected
         c = filtered_contours[0]
         M = cv2.moments(c)
@@ -327,6 +411,7 @@ def goal_detect():
         return gx, gy, True
     else:
         return -1, -1, False
+
 def goal_state():
     yellow = [255.0, 255.0, 0.0]
     for object in camera.getRecognitionObjects():
@@ -336,15 +421,16 @@ def goal_state():
         color[2] = color[2]*255
         # print(color[0], color[1], color[2])
         if (color[0] == yellow[0] and color[1] == yellow[1] and color[2] == yellow[2]):
-
-            return object.getPosition(), object.getOrientation()
-
-keyboard = robot.getKeyboard()
-keyboard.enable(timestep)
+            pose = object.getPosition()
+            wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
+            wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
+            return [wx, wy]
 
 def mode_manual():
     global vL
     global vR
+    global keyboard
+    global counter
     key = keyboard.getKey()
     while(keyboard.getKey() != -1): pass
     if key == keyboard.LEFT :
@@ -362,14 +448,41 @@ def mode_manual():
     elif key == ord(' '):
         vL = 0
         vR = 0
-    elif key == ord('S'):
-        plt.imshow(configuration_space)
+    elif key == ord('M'):
+        plt.imshow(map)
         plt.show()
+    elif key == ord('C'):
+        print("saving picture")
+        img = np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4))
+        cv2.imwrite('camera' + '_' + str(pose_x) + '_' + str(pose_y) + '_'+ str(pose_theta) + '.png', img)
+        counter += 1
+    elif key == ord('S'):
+        print("saving map")
+        # Part 1.4: Filter map and save to filesystem
+        threshold_map = np.multiply(map > 0.5, 1)
+        np.save("map.npy", threshold_map)
+        print("Map file saved")
     else: # slow down
         vL *= 0.75
         vR *= 0.75
 
 def ik_arm(target_position, target_orientation=None, orientation_mode = None, initial = None, angle = None):
+    """Use IK to calculate position
+
+        Parameters
+        ----------
+        target_position: array
+            3 value array with desired position
+        target_orientation: numpy.array
+            An optional 3x3 array for orientation at destination
+        initial: array
+            A 13 element array for the initial arm position, will default to the arm's current postition
+        angle: float
+            angle where x axis is forward
+        ---------
+        Returns
+        Null
+    """
     global arm_joints
     if initial is None:
         initial = arm_joints
@@ -393,20 +506,7 @@ def ik_arm(target_position, target_orientation=None, orientation_mode = None, in
     else:
         return my_chain.inverse_kinematics(target_position, initial_position=initial)
 
-
 def manipulate_to(newPose):
-    """Use IK to calculate position and then deliver position to joints
-
-        Parameters
-        ----------
-        target_position: array
-            3 value array with desired position
-        target_Orientation: numpy.array
-            An optional 3x3 array for orientation at destination
-        ---------
-        Returns
-        Null
-    """
     global arm_joints
     arm_joints = newPose
     # print(arm_joints)
@@ -420,21 +520,13 @@ def manipulate_to(newPose):
     
 # Test statement/sanity check
 
-angle = -1
+# angle = -1
 # Main Loop
 
 while robot.step(timestep) != -1:
     gx, gy, goal_detected = goal_detect()
     if mode == "manual":
         mode_manual()
-    elif mode == "testing":
-        if counter % 10 == 0:
-            angle += 0.05
-            print(angle)
-            
-                                        
-            manipulate_to(ik_arm([0.6, 0.5, 1.2], angle=angle))
-        counter += 1
     elif mode == "autonomous":
         if state == "exploration":
             # Function to randomly explore map until goal is detected.
@@ -459,7 +551,8 @@ while robot.step(timestep) != -1:
                 vR = MAX_SPEED/1.3
 
             if(goal_detected):
-                goal_location, goal_orientation = goal_state()
+                goal_location = goal_state()
+                path_planning([pose_x, pose_y], goal_location)
                 state = "orient"
         # Could we replace with pathfinding from previous lab?
         elif state == "orient":
@@ -491,7 +584,6 @@ while robot.step(timestep) != -1:
                 vL = 0
                 vR = 0
                 state = "stabilize"
-
         elif state == "stabilize":
             delay(30, "openGripper")
         elif state == "openGripper":
@@ -557,9 +649,9 @@ while robot.step(timestep) != -1:
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps)
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
+    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     #Lidar Map:
-    lidar_map(pose_x, pose_y, pose_theta, lidar)
+    lidar_map()
     goal_map(goal_list)
     location_map(pose_x, pose_y)
         
