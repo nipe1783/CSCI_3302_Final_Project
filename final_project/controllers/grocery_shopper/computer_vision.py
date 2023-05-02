@@ -1,7 +1,18 @@
 import numpy as np
 import cv2
 
-def goal_detect():
+def goal_detect(camera):
+
+    '''
+    detects yellow blob on camera. returns location of blob on image and if there is a blob detected.
+
+    camera: robot camera object
+
+    returns: 
+        gx: blob x location on camera. 
+        gy: blob y location on camera. 
+        bool: if blob is detected.
+    '''
 
     img = np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4))
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)

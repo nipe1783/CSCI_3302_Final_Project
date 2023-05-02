@@ -1,4 +1,5 @@
 import math
+from scipy.signal import convolve2d
 
 def mode_manual(keyboard, MAX_SPEED, vL, vR):
     # Manual control mode for robot. 
@@ -31,6 +32,40 @@ def mode_manual(keyboard, MAX_SPEED, vL, vR):
         vL *= 0.75
         vR *= 0.75
     return vL, vR
+
+def obstacle_detected_roam(lidar):
+
+    '''
+    autonmous navigation. robot randomly moves and avoids obstacles.
+
+    lidar: robot lidar object.
+
+    returns:
+        turn_left: bool that is true when robot should turn left
+        turn_right: bool that is true when robot should turn right
+    '''
+
+    # returns true if obstacle too close infront of robot
+    turn_left = False
+    turn_right = False
+    point_cloud_sensor_reading = lidar.getPointCloud()
+    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
+    point_center = point_cloud_sensor_reading[250]
+    point_left = point_cloud_sensor_reading[200]
+    point_right = point_cloud_sensor_reading[300]
+
+    rho_center = math.sqrt( point_center.x** 2+ point_center.y**2)
+    rho_left = math.sqrt( point_left.x** 2+ point_left.y**2)
+    rho_right = math.sqrt( point_right.x** 2+ point_right.y**2)
+
+    if(rho_right < 2):
+        turn_left = True
+    if(rho_left < 2):
+        turn_right = True
+    if(rho_center < 2):
+        turn_right = True
+
+    return turn_left, turn_right
 
 
 def lidar_map(pose_x, pose_y, pose_theta, world_width, world_height, LIDAR_SENSOR_MAX_RANGE, world_to_map_height, world_to_map_width, lidar, map, display):
@@ -84,3 +119,53 @@ def lidar_map(pose_x, pose_y, pose_theta, world_width, world_height, LIDAR_SENSO
             display.drawPixel(my + 50,mx)
 
     return map, display
+
+def configuration_map(robot_space):
+    '''
+    creates configuration space map like in lab 5.
+
+    robot_space: matrix of ones with num of rows and colums that are the length of the robot in pixel dimension.
+    '''
+    configuration_space = convolve2d(map, robot_space, mode = "same")
+    configuration_space = (configuration_space >= 1).astype(int)
+    return configuration_space
+
+def goal_map(goal_list, display, world_to_map_height, world_to_map_width):
+    '''
+    shows cubes on display. 
+
+    goal_list: list of x,y coa for cubes.
+    display: robot display object.
+    world_to_map_height: conversion from env height to map height.
+    world_to_map_width: conersino from env width to map width.
+    
+    '''
+    for goal in goal_list:
+
+        wx = goal[0]
+        wy = goal[1]
+        mx = abs(int(wx * world_to_map_height))
+        my = abs(int(wy * world_to_map_width))
+        display.setColor(int(0xFFFF00))
+        display.drawPixel(my + 50,mx)
+
+    return display
+
+def location_map(pose_x, pose_y, world_to_map_height, world_to_map_width, display):
+
+    '''
+    shows robot trail on display.
+
+    pose_x: env x position of robot.
+    pose_y: env y position of robot.
+
+    returns:
+        display: robot display object
+    '''
+
+    mx = abs(int(pose_x * world_to_map_height))
+    my = abs(int(pose_y * world_to_map_width))
+    display.setColor(int(0xFFFFFF))
+    display.drawPixel(my + 50,mx)
+
+    return display
