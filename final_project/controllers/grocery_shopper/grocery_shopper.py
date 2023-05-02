@@ -15,6 +15,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import cv2
 import heapq
 from rrt import rrt_star
+from mapping import mode_manual, lidar_map
 
 #Initialization
 print("=== Initializing Grocery Shopper...")
@@ -119,9 +120,9 @@ for goal in goal_list:
 
 # ------------------------------------------------------------------
 # Robot Modes
-# mode = "manual"
+mode = "manual"
 # mode = "testing"
-mode = "autonomous"
+# mode = "autonomous"
 # state = "openGripper"
 state = "exploration"
 counter = 0
@@ -154,8 +155,6 @@ def delay(time, newState):
         counter = 0
         global state
         state = newState
-    if mode == "manual":
-        vL, vR = mode_manual(vL, vR)
 
 def odometer(pose_x, pose_y, pose_theta, vL, vR, timestep):
 
@@ -195,48 +194,6 @@ def location_map(pose_x, pose_y):
     my = abs(int(pose_y * world_to_map_width))
     display.setColor(int(0xFFFFFF))
     display.drawPixel(my + 50,mx)
-
-def lidar_map(pose_x, pose_y, pose_theta, lidar):
-
-    lidar_sensor_readings = lidar.getRangeImage()
-    lidar_sensor_readings = lidar_sensor_readings[83:len(lidar_sensor_readings)-83]
-
-    point_cloud_sensor_reading = lidar.getPointCloud()
-    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
-
-    for i, point in enumerate(point_cloud_sensor_reading):
-
-        # x, y, z are relative to lidar point origin.
-        rx = point.x
-        ry = point.y
-        rz = point.z
-        rho = math.sqrt( rx** 2+ ry**2)
-
-        alpha = lidar_offsets[i]
-        # point location in world coa:
-        wx = math.cos(pose_theta) * rx - math.sin(pose_theta) * ry + pose_x
-        wy = math.sin(pose_theta) * rx + math.cos(pose_theta) * ry + pose_y
-
-        if wx >= world_height:
-            wx = world_height - .001
-        elif wx <= 0:
-            wx = .001
-        if  wy >= world_width:
-            wy = world_width - .001
-        elif wy <= 0:
-            wy = .001
-        if abs(rho) < LIDAR_SENSOR_MAX_RANGE:
-            mx = abs(int(wx * world_to_map_height))
-            my = abs(int(wy * world_to_map_width))
-            # print("wx: ", wx, " wy: ", wy, " mx: ", mx, " my: ", my)
-            # You will eventually REPLACE the following lines with a more robust version of the map
-            # with a grayscale drawing containing more levels than just 0 and 1.
-            if map[mx, my] < 1:
-                map[mx, my] += 0.005
-            g = int(map[mx, my] * 255)
-            display.setColor(g*(256**2) + g*256 + g)
-            display.setColor(g)
-            display.drawPixel(my + 50,mx)
 
 configuration_space = np.zeros(shape=[360,360])
 width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
@@ -311,12 +268,6 @@ def goal_detect():
         cy = int(M['m01'] / M['m00'])
         cv2.circle(smoothed_copy, (cx, cy), 5, (0, 0, 255), -1)
 
-    key = keyboard.getKey()
-    while(keyboard.getKey() != -1): pass
-    if key == ord('S'):
-        plt.imshow(smoothed_copy)
-        plt.show()
-
     if len(filtered_contours) > 0:
 
         # location of first goal detected
@@ -327,6 +278,7 @@ def goal_detect():
         return gx, gy, True
     else:
         return -1, -1, False
+    
 def goal_state():
     yellow = [255.0, 255.0, 0.0]
     for object in camera.getRecognitionObjects():
@@ -341,33 +293,6 @@ def goal_state():
 
 keyboard = robot.getKeyboard()
 keyboard.enable(timestep)
-
-def mode_manual():
-    global vL
-    global vR
-    key = keyboard.getKey()
-    while(keyboard.getKey() != -1): pass
-    if key == keyboard.LEFT :
-        vL = -MAX_SPEED
-        vR = MAX_SPEED
-    elif key == keyboard.RIGHT:
-        vL = MAX_SPEED
-        vR = -MAX_SPEED
-    elif key == keyboard.UP:
-        vL = MAX_SPEED
-        vR = MAX_SPEED
-    elif key == keyboard.DOWN:
-        vL = -MAX_SPEED
-        vR = -MAX_SPEED
-    elif key == ord(' '):
-        vL = 0
-        vR = 0
-    elif key == ord('S'):
-        plt.imshow(configuration_space)
-        plt.show()
-    else: # slow down
-        vL *= 0.75
-        vR *= 0.75
 
 def ik_arm(target_position, target_orientation=None, orientation_mode = None, initial = None, angle = None):
     global arm_joints
@@ -426,7 +351,7 @@ angle = -1
 while robot.step(timestep) != -1:
     gx, gy, goal_detected = goal_detect()
     if mode == "manual":
-        mode_manual()
+        vL, vR = mode_manual(keyboard, MAX_SPEED, vL, vR)
     elif mode == "testing":
         if counter % 10 == 0:
             angle += 0.05
@@ -559,7 +484,7 @@ while robot.step(timestep) != -1:
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
     # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     #Lidar Map:
-    lidar_map(pose_x, pose_y, pose_theta, lidar)
+    lidar_map(pose_x, pose_y, pose_theta, world_width, world_height, LIDAR_SENSOR_MAX_RANGE, world_to_map_height, world_to_map_width, lidar, map, display)
     goal_map(goal_list)
     location_map(pose_x, pose_y)
         
