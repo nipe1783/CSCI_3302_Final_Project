@@ -3,31 +3,6 @@ import matplotlib.pyplot as plt
 import math
 import random
 
-
-def goal_state(camera):
-    '''
-    finds env x,y,z,theta coa for goal.
-
-    camera: robot camera object
-
-    returns:
-        object.position: list of x, y, z pos.
-        object.orientation: list of orientation.
-    '''
-    yellow = [255.0, 255.0, 0.0]
-    for object in camera.getRecognitionObjects():
-        color = object.getColors()
-        color[0] = color[0]*255
-        color[1] = color[1]*255
-        color[2] = color[2]*255
-        # print(color[0], color[1], color[2])
-        if (color[0] == yellow[0] and color[1] == yellow[1] and color[2] == yellow[2]):
-
-            return object.getPosition(), object.getOrientation()
-
-###############################################################################
-## Base Code
-###############################################################################
 class Node:
     """
     Node for RRT Algorithm. This is what you'll make your graph with!
@@ -43,6 +18,15 @@ class Node:
             cost += math.dist(node.point, node.parent.point)
             node = node.parent
         return cost
+    def getPath(self):
+        node = self
+        waypoints = []
+        while node.parent is not None:
+            waypoints.append(node.point)
+            node = node.parent
+        waypoints.append(node.point)
+        waypoints.reverse()
+        return waypoints
         
 
 def get_random_valid_vertex(state_is_valid, bounds):
@@ -198,3 +182,4 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
     # TODO: Make sure to add every node you create onto node_list, and to set node.parent and node.path_from_parent for each
     print("No goal given or path not found")
     return node_list
+    # print(waypoints)

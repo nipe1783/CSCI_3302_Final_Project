@@ -34,3 +34,31 @@ def position_gps(gps, compass, world_height, world_width):
     pose_theta = rad
 
     return pose_x, pose_y, pose_theta
+
+def navigate(pose_x, pose_y, pose_theta, goal, AXLE_LENGTH, MAX_SPEED):
+    rho = math.dist((pose_x, pose_y), goal)
+    alpha = (2 * math.pi + math.atan2(pose_x - goal[0], goal[1] - pose_y) - pose_theta) % (2 * math.pi)
+    if alpha > math.pi:
+        alpha = alpha - (2*math.pi)
+
+    dX = rho
+    dTheta = 10*alpha
+
+    vL = dX - (dTheta*AXLE_LENGTH/2)
+    vR = dX + (dTheta*AXLE_LENGTH/2)
+    
+    speed = MAX_SPEED * 0.2
+    if abs(vL) > abs(vR):
+        vR = vR/abs(vL) * speed
+        if vL > 0:
+            vL = speed
+        else:
+            vL = -speed
+    else: 
+        vL = vL/abs(vR) * speed
+        if vR > 0:
+            vR = speed
+        else:
+            vR = -speed
+    return vL, vR
+    
