@@ -5,19 +5,17 @@
 from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard, Display
 import math
 import numpy as np
+import copy
 from scipy.signal import convolve2d
 from matplotlib import pyplot as plt
 import ikpy
 import ikpy.chain
-import ikpy.utils.plot as plot
-import matplotlib.pyplot
-from mpl_toolkits.mplot3d import Axes3D
 import cv2
 import heapq
-from mapping import mode_manual, obstacle_detected_roam, lidar_map, goal_map, configuration_map, location_map
-from computer_vision import goal_detect
-from planning import goal_state, rrt_star
-from localization import position_gps
+from mapping import mode_manual, obstacle_detected_roam
+from computer_vision import goal_detect, goal_state
+from planning import rrt_star
+from localization import position_gps, navigate
 from manipulation import manipulate_to, ik_arm
 from helper import delay
 #Initialization
@@ -82,6 +80,10 @@ lidar.enablePointCloud()
 # Enable display
 display = robot.getDevice("display")
 
+# Enable keyboard (optional)
+keyboard = robot.getKeyboard()
+keyboard.enable(timestep)
+
 # Environment dimesnions:
 # Width: 16.1 m
 # Height: 30 m
@@ -101,7 +103,7 @@ vR = 0
 lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
-
+[1.6668519798569494, -0.20284982283080194, -0.18583268587895996]
 item0 = [2.6202858632038093, 3.58914, 0.5748653025126261]
 item1 = [11.547000914636712, -8.505688675100652, 0.03486531467979112]
 item2 = [-1.3296063450130449, -4.05309, 0.5748653625599697]
@@ -116,15 +118,9 @@ item10 = [3.504540887533399, 3.58914, 1.074864218478985]
 item11 = [3.4994646114633245, 7.16914, 1.07486535924194]
 goal_list = [item0, item1, item2, item3, item4, item5, item6, item7, item8, item9, item10, item11]
 
-for goal in goal_list:
-    goal[0] = world_height/2  - goal[0]
-    goal[1] = world_width/2 - goal[1] 
-
-
 # ------------------------------------------------------------------
 # Robot Modes
 # mode = "manual"
-# mode = "testing"
 mode = "autonomous"
 # state = "openGripper"
 state = "exploration"
@@ -137,6 +133,15 @@ world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
 map = np.zeros(shape=[map_height,map_width])
+seen = np.zeros(shape=[map_height,map_width])
+
+for goal in goal_list:
+    goal[0] = world_height/2  - goal[0]
+    goal[1] = world_width/2 - goal[1] 
+    mx = abs(int(goal[0] * world_to_map_height))
+    my = abs(int(goal[1] * world_to_map_width))
+    display.setColor(int(0xFFFF00))
+    display.drawPixel(my + 50,mx)
 
 heights = [0.575, 1.075]
 active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False]
@@ -147,30 +152,20 @@ arm_queue = []
 # target_orientation = [0.5, -0.5, 2.0]
 # target_position = [curr_pose[0][3], curr_pose[1][3], curr_pose[2][3]]
 
-
-configuration_space = np.zeros(shape=[360,360])
 width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
 robot_space = np.ones(shape=[width,width])
-threshold = 0.2 # we can change this value for tuning of what is considered an obstacle.
+waypoints = []
+threshold = 0.3 # we can change this value for tuning of what is considered an obstacle.\
 
-keyboard = robot.getKeyboard()
-keyboard.enable(timestep)
-
-angle = -1
+# angle = -1
 # Main Loop
 
 while robot.step(timestep) != -1:
+    # GPS coardinates:
+    pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     gx, gy, goal_detected = goal_detect(camera)
     if mode == "manual":
-        vL, vR = mode_manual(keyboard, MAX_SPEED, vL, vR)
-    elif mode == "testing":
-        if counter % 10 == 0:
-            angle += 0.05
-            print(angle)
-            
-                                        
-            robot_parts = manipulate_to(ik_arm([0.6, 0.5, 1.2], my_chain, arm_joints, angle=angle), robot_parts)
-        counter += 1
+        mode_manual()
     elif mode == "autonomous":
         if state == "exploration":
             # Function to randomly explore map until goal is detected.
@@ -195,9 +190,37 @@ while robot.step(timestep) != -1:
                 vR = MAX_SPEED/1.3
 
             if(goal_detected):
-                goal_location, goal_orientation = goal_state(camera)
+                goal_location = goal_state(camera, pose_x, pose_y, pose_theta)
+                print(goal_location)
+                configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same")>= 1).astype(int)
+                # plt.imshow(configuration_space)
+                # plt.show()
+
+                validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
+                goal_check = lambda point: math.dist(point, goal_location) < 1
+
+                bounds = np.array([[0, world_height],[0, world_width]])
+                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 500, 0.5, state_is_goal=goal_check)[-1].getPath()
+                prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
+                for point in waypoints:
+                    point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
+                    cv2.line(configuration_space, prevPoint, point, 1, 1)
+                    prevPoint = point
+                plt.imshow(configuration_space)
+                plt.show()
+                state = "navigation"
+                counter = 0
+
+
+        elif state == "navigation":
+            if counter >= len(waypoints):
                 state = "orient"
-        # Could we replace with pathfinding from previous lab?
+                counter = 0
+                continue
+            if math.dist((pose_x, pose_y), waypoints[counter]) < 0.5:
+                counter += 1
+            else:
+                vL, vR = navigate(pose_x, pose_y, pose_theta, waypoints[counter], AXLE_LENGTH, MAX_SPEED)
         elif state == "orient":
             if gx == -1 and gy == -1:
                 counter, state = delay(20, state, "exploration", counter)
@@ -227,7 +250,6 @@ while robot.step(timestep) != -1:
                 vL = 0
                 vR = 0
                 state = "stabilize"
-
         elif state == "stabilize":
             counter, state = delay(30, state, "openGripper", counter)
         elif state == "openGripper":
@@ -290,15 +312,58 @@ while robot.step(timestep) != -1:
     # Odometer coardinates:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
 
-    # GPS coardinates:
-    pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
-    #Lidar Map:
-    map, display = lidar_map(pose_x, pose_y, pose_theta, world_width, world_height, LIDAR_SENSOR_MAX_RANGE, world_to_map_height, world_to_map_width, lidar, map, display)
-    display = goal_map(goal_list, display, world_to_map_height, world_to_map_width)
-    display = location_map(pose_x, pose_y, world_to_map_height, world_to_map_width, display)
+    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
+    
+    # --------------
+    # Lidar Mapping:
+    # --------------
+    
+    lidar_sensor_readings = lidar.getRangeImage()
+    lidar_sensor_readings = lidar_sensor_readings[83:len(lidar_sensor_readings)-83]
+
+    point_cloud_sensor_reading = lidar.getPointCloud()
+    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
+
+    # This is to improve efficiency
+    cos_pose_theta= math.cos(pose_theta)
+    sin_pose_theta= math.sin(pose_theta)
+
+    for i, point in enumerate(point_cloud_sensor_reading):
+
+        # x, y, z are relative to lidar point origin.
+        rx = point.x
+        ry = point.y
+        rho = math.sqrt( rx** 2+ ry**2)
         
+        # point location in world coords:
+        wx = cos_pose_theta * rx - sin_pose_theta * ry + pose_x
+        wy = sin_pose_theta * rx + cos_pose_theta * ry + pose_y
+
+        if wx >= world_height:
+            wx = world_height - .001
+        elif wx <= 0:
+            wx = .001
+        if  wy >= world_width:
+            wy = world_width - .001
+        elif wy <= 0:
+            wy = .001
+        if abs(rho) < LIDAR_SENSOR_MAX_RANGE:
+            mx = abs(int(wx * world_to_map_height))
+            my = abs(int(wy * world_to_map_width))
+            if map[mx, my] < 1:
+                map[mx, my] += 0.005
+            g = int(map[mx, my] * 255)
+            display.setColor(g*(256**2) + g*256 + g)
+            display.setColor(g)
+            display.drawPixel(my + 50,mx)
+
+    mx = abs(int(pose_x * world_to_map_height))
+    my = abs(int(pose_y * world_to_map_width))
+    display.setColor(int(0xFFFFFF))
+    display.drawPixel(my + 50,mx)
+
+
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
     
