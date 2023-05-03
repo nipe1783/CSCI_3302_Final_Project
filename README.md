@@ -4,7 +4,7 @@ Final Project for CSCI3302 Introduction to Robotics. An autonomous robot which s
 
 ## Team Members
 
-- Nicolas Perault
+- Nicolas Perrault
 - Sean Shi
 - Christian Lee
 
