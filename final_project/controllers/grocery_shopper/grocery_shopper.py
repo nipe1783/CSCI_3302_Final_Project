@@ -13,7 +13,7 @@ import ikpy.chain
 import cv2
 import heapq
 from mapping import mode_manual, obstacle_detected_roam
-from computer_vision import goal_detect, goal_state
+from computer_vision import goal_detect, goal_state, add_goal_state
 from planning import rrt_star
 from localization import position_gps, navigate
 from manipulation import manipulate_to, ik_arm
@@ -118,6 +118,9 @@ item10 = [3.504540887533399, 3.58914, 1.074864218478985]
 item11 = [3.4994646114633245, 7.16914, 1.07486535924194]
 goal_list = [item0, item1, item2, item3, item4, item5, item6, item7, item8, item9, item10, item11]
 
+# queue that stores list of goal x,y,z locations
+goal_queue = []
+
 # ------------------------------------------------------------------
 # Robot Modes
 # mode = "manual"
@@ -161,44 +164,25 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 # Main Loop
 
 while robot.step(timestep) != -1:
+
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     gx, gy, goal_detected = goal_detect(camera)
+
     if mode == "manual":
         mode_manual()
+
     elif mode == "autonomous":
+
         if state == "exploration":
-            # Function to randomly explore map until goal is detected.
-            # print("goal_detected: ", goal_detected)
-            turn_left, turn_right = obstacle_detected_roam(lidar)
 
-            if turn_left and turn_right:
-                # Turn Left
-                vL = -MAX_SPEED/7
-                vR = MAX_SPEED/7
-            elif turn_left:
-                # Turn Left
-                vL = -MAX_SPEED/7
-                vR = MAX_SPEED/7
-            elif turn_right:
-                # Turn Right
-                vL = MAX_SPEED/7
-                vR = -MAX_SPEED/7
-            else:
-                # Continue Forward
-                vL = MAX_SPEED/1.3
-                vR = MAX_SPEED/1.3
+            if goal_queue:
+                # goal_queue has some goals in it. Robot navigates to them.
 
-            if(goal_detected):
-                goal_location = goal_state(camera, pose_x, pose_y, pose_theta)
-                print(goal_location)
+                goal_location = goal_queue.pop(0)
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
-                # plt.imshow(configuration_space)
-                # plt.show()
-
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
                 goal_check = lambda point: math.dist(point, goal_location) < 1
-
                 bounds = np.array([[0, world_height],[0, world_width]])
                 waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 1000, 0.2, state_is_goal=goal_check)[-1].getPath()
                 prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
@@ -210,6 +194,31 @@ while robot.step(timestep) != -1:
                 plt.show()
                 state = "navigation"
                 counter = 0
+
+            else:
+                # Function to randomly explore map until goal is detected.
+                turn_left, turn_right = obstacle_detected_roam(lidar)
+
+                if turn_left and turn_right:
+                    # Turn Left
+                    vL = -MAX_SPEED/7
+                    vR = MAX_SPEED/7
+                elif turn_left:
+                    # Turn Left
+                    vL = -MAX_SPEED/7
+                    vR = MAX_SPEED/7
+                elif turn_right:
+                    # Turn Right
+                    vL = MAX_SPEED/7
+                    vR = -MAX_SPEED/7
+                else:
+                    # Continue Forward
+                    vL = MAX_SPEED/1.3
+                    vR = MAX_SPEED/1.3
+
+                if(goal_detected):
+                    goal_queue = add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue)
+
         elif state == "recalculate path":
             configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
             # plt.imshow(configuration_space)
@@ -229,6 +238,7 @@ while robot.step(timestep) != -1:
             plt.show()
             state = "navigation"
             counter = 0
+
         elif state == "navigation":
             if counter >= len(waypoints):
                 state = "orient"
@@ -238,6 +248,7 @@ while robot.step(timestep) != -1:
                 counter += 1
             else:
                 vL, vR = navigate(pose_x, pose_y, pose_theta, waypoints[counter], AXLE_LENGTH, MAX_SPEED)
+
         elif state == "orient":
             if gx == -1 and gy == -1:
                 counter, state = delay(20, state, "exploration", counter)
@@ -257,6 +268,7 @@ while robot.step(timestep) != -1:
                 vL = 0
                 vR = 0
                 state = "approach"
+
         elif state == "approach":
             if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
                 state = "orient"
@@ -269,11 +281,13 @@ while robot.step(timestep) != -1:
                 state = "stabilize"
         elif state == "stabilize":
             counter, state = delay(30, state, "openGripper", counter)
+
         elif state == "openGripper":
             robot_parts["gripper_left_finger_joint"].setPosition(0.045)
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
             if left_gripper_enc.getValue()>=0.044:
                 state = "setArmToReady"
+
         elif state == "setArmToReady":
             angle = (123-gx)/120.
             print(angle)
@@ -282,6 +296,7 @@ while robot.step(timestep) != -1:
             for i in points:
                 arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=angle))
             state = "movingArmToReady"
+
         elif state == "movingArmToReady":
             if counter % 10 == 0:
                 if len(arm_queue) > int(counter/10):
@@ -290,25 +305,30 @@ while robot.step(timestep) != -1:
                     state = "closeGripper"
                     counter = -1
             counter += 1
+
         elif state == "closeGripper":
             vL = 0
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            counter, state = delay(40, state, "lift", counter)    
+            counter, state = delay(40, state, "lift", counter)   
+
         elif state == "lift":
             robot_parts = manipulate_to(ik_arm([0.9, -0.05, 0.82 + arm_joints[2] ], my_chain, arm_joints), robot_parts)
             state = "backOut"
+
         elif state == "backOut":
             vL= -MAX_SPEED/2
             vR= -MAX_SPEED/2
             counter, state = delay(100, state, "setArmToBasket", counter)
+
         elif state == "setArmToBasket":
             vL = 0
             vR = 0
             basket = ik_arm([0.25, 0.05, 0.4 + arm_joints[2] ], my_chain, arm_joints)
             arm_queue = np.linspace(arm_joints, basket, 20)
             state = "movingArmToBasket"
+
         elif state == "movingArmToBasket":
             if counter % 5 == 0:
                 if len(arm_queue) > int(counter/5):
@@ -317,10 +337,12 @@ while robot.step(timestep) != -1:
                     state = "releaseObject"
                     counter = -1
             counter += 1
+
         elif state == "releaseObject":
             robot_parts["gripper_left_finger_joint"].setPosition(0.045)
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
             counter, state = delay(20, state, "stowArm", counter)
+
         elif state == "stowArm":
 
             robot_parts = manipulate_to(ik_arm([0.0, -0.2, 1.6], my_chain, arm_joints), robot_parts)
