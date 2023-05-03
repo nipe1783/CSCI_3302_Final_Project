@@ -61,6 +61,12 @@ right_gripper_enc=robot.getDevice("gripper_right_finger_joint_sensor")
 left_gripper_enc.enable(timestep)
 right_gripper_enc.enable(timestep)
 
+# Enable wheel encoders (position sensors)
+left_wheel = robot.getDevice("wheel_left_joint_sensor")
+left_wheel.enable(timestep)
+right_wheel = robot.getDevice("wheel_right_joint_sensor")
+right_wheel.enable(timestep)
+
 # Enable Camera
 camera = robot.getDevice('camera')
 camera.enable(timestep)
@@ -165,6 +171,8 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 
 while robot.step(timestep) != -1:
 
+    print(state)
+
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     gx, gy, goal_detected = goal_detect(camera)
@@ -190,8 +198,6 @@ while robot.step(timestep) != -1:
                     point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
                     cv2.line(configuration_space, prevPoint, point, 1, 1)
                     prevPoint = point
-                plt.imshow(configuration_space)
-                plt.show()
                 state = "navigation"
                 counter = 0
 
@@ -240,16 +246,117 @@ while robot.step(timestep) != -1:
             counter = 0
 
         elif state == "navigation":
-            if counter >= len(waypoints):
-                state = "orient"
-                counter = 0
-                continue
-            if math.dist((pose_x, pose_y), waypoints[counter]) < 0.5:
-                counter += 1
-            else:
-                vL, vR = navigate(pose_x, pose_y, pose_theta, waypoints[counter], AXLE_LENGTH, MAX_SPEED)
+            # if counter >= len(waypoints):
+            #     state = "theta-docking"
+            #     counter = 0
+            #     continue
+            # if math.dist((pose_x, pose_y), waypoints[counter]) < 0.5:
+            #     counter += 1
+            # else:
+            #     vL, vR = navigate(pose_x, pose_y, pose_theta, waypoints[counter], AXLE_LENGTH, MAX_SPEED)
+            state = "theta-docking"
+            counter = 0
 
-        elif state == "orient":
+        elif state == "theta-docking":
+
+            buffer = 0.01
+            if pose_theta > ( math.pi + buffer) and pose_theta < (3/2 * math.pi) :
+                # rotate robot to pose_theta = pi
+                vL = MAX_SPEED/10
+                vR = -MAX_SPEED/10
+            elif pose_theta > (3/2 * math.pi + buffer) and pose_theta < (2 * math.pi):
+                # rotate robot to pose_theta = 2 pi
+                vL = -MAX_SPEED/10
+                vR = MAX_SPEED/10
+            elif pose_theta > ( math.pi/2 + buffer) and pose_theta < math.pi:
+                # rotate robot to pose_theta = pi
+                vL = -MAX_SPEED/10
+                vR = MAX_SPEED/10
+            elif pose_theta > ( buffer) and pose_theta < (math.pi / 2):
+                # rotate robot to pose_theta = pi
+                vL = MAX_SPEED/10
+                vR = -MAX_SPEED/10
+            else:
+                vL = 0
+                vR = 0
+                counter, state = delay(50, state, "x-docking", counter)
+        elif state == "x-docking":
+            if pose_x > goal_location[0] + buffer:
+                # move forward until goal.x == pose_x
+                if pose_theta > ( math.pi + buffer):
+                    # turn right
+                    vL = MAX_SPEED/5
+                    vR = MAX_SPEED/10
+                elif pose_theta < ( math.pi + buffer):
+                    # turn left
+                    vL = MAX_SPEED/10
+                    vR = MAX_SPEED/5
+                else:
+                    # move forward
+                    vL = MAX_SPEED/5
+                    vR = MAX_SPEED/5
+            elif pose_x < goal_location[0] - buffer:
+                # move backwards until goal.x == pose_x
+                if pose_theta > ( math.pi + buffer):
+                    # turn right
+                    vL = -MAX_SPEED/15
+                    vR = -MAX_SPEED/10
+                elif pose_theta < ( math.pi + buffer):
+                    # turn left
+                    vL = -MAX_SPEED/10
+                    vR = -MAX_SPEED/15
+                else:
+                    # move backwards
+                    vL = -MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+            else:
+                vL = 0
+                vR = 0
+                counter, state = delay(50, state, "re-theta-docking", counter)
+        elif state == "re-theta-docking":
+            buffer = 0.01
+            if pose_y < goal_location[1]:
+                # robot needs to rotate to pi/2
+                if pose_theta > (math.pi/2 + buffer) :
+                    # vel = (pose_theta/ (math.pi/2)** 5)  * MAX_SPEED * .05
+                    # # rotate robot clockwise
+                    # vL = vel
+                    # vR = -vel
+                    vL = MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+                elif pose_theta < (math.pi/2 - buffer):
+                    # vel = ((math.pi/2) / pose_theta ** 5)  * MAX_SPEED * .05
+                    # # rotate robot ccw
+                    # vL = -vel
+                    # vR = vel
+                    vL = -MAX_SPEED/10
+                    vR = MAX_SPEED/10
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "orient-docking", counter)
+            else:
+                # robot needs to rotate to 3pi/2
+                if pose_theta < (3*math.pi/2 - buffer) :
+                    # vel = (pose_theta/ (math.pi/2)** 5)  * MAX_SPEED * .05
+                    # # rotate robot clockwise
+                    # vL = vel
+                    # vR = -vel
+                    vL = -MAX_SPEED/10
+                    vR = MAX_SPEED/10
+                elif pose_theta > (3*math.pi/2 + buffer):
+                    # vel = ((math.pi/2) / pose_theta ** 5)  * MAX_SPEED * .05
+                    # # rotate robot ccw
+                    # vL = -vel
+                    # vR = vel
+                    vL = MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "orient-docking", counter)
+
+        elif state == "orient-docking":
             if gx == -1 and gy == -1:
                 counter, state = delay(20, state, "exploration", counter)
                 continue
@@ -257,12 +364,12 @@ while robot.step(timestep) != -1:
                 counter = 0
             if gx < 110:
                 # robot rotate left
-                vL = -MAX_SPEED/5
-                vR = MAX_SPEED/15
+                vL = -MAX_SPEED/10
+                vR = MAX_SPEED/20
             elif gx > 130:
                 # robot rotate right
-                vL = MAX_SPEED/15
-                vR = -MAX_SPEED/5
+                vL = MAX_SPEED/20
+                vR = -MAX_SPEED/10
             else:
                 # go forward
                 vL = 0
@@ -271,7 +378,7 @@ while robot.step(timestep) != -1:
 
         elif state == "approach":
             if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
-                state = "orient"
+                state = "orient-docking"
             if lidar.getRangeImage()[333] > 1:
                 vL = MAX_SPEED/5
                 vR = MAX_SPEED/5
@@ -352,7 +459,7 @@ while robot.step(timestep) != -1:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
 
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
+    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     
     # --------------
     # Lidar Mapping:
