@@ -133,7 +133,7 @@ world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
 map = np.zeros(shape=[map_height,map_width])
-seen = np.zeros(shape=[map_height,map_width])
+seen = np.zeros(shape=[map_height,map_width], dtype='uint8')
 
 for goal in goal_list:
     goal[0] = world_height/2  - goal[0]
@@ -192,7 +192,7 @@ while robot.step(timestep) != -1:
             if(goal_detected):
                 goal_location = goal_state(camera, pose_x, pose_y, pose_theta)
                 print(goal_location)
-                configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same")>= 1).astype(int)
+                configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
                 # plt.imshow(configuration_space)
                 # plt.show()
 
@@ -200,7 +200,7 @@ while robot.step(timestep) != -1:
                 goal_check = lambda point: math.dist(point, goal_location) < 1
 
                 bounds = np.array([[0, world_height],[0, world_width]])
-                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 500, 0.5, state_is_goal=goal_check)[-1].getPath()
+                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 1000, 0.2, state_is_goal=goal_check)[-1].getPath()
                 prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
                 for point in waypoints:
                     point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
@@ -210,8 +210,25 @@ while robot.step(timestep) != -1:
                 plt.show()
                 state = "navigation"
                 counter = 0
+        elif state == "recalculate path":
+            configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
+            # plt.imshow(configuration_space)
+            # plt.show()
 
+            validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
+            goal_check = lambda point: seen[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
 
+            bounds = np.array([[0, world_height],[0, world_width]])
+            waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 1000, 0.5, state_is_goal=goal_check)[-1].getPath()
+            prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
+            for point in waypoints:
+                point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
+                cv2.line(configuration_space, prevPoint, point, 1, 1)
+                prevPoint = point
+            plt.imshow(configuration_space)
+            plt.show()
+            state = "navigation"
+            counter = 0
         elif state == "navigation":
             if counter >= len(waypoints):
                 state = "orient"
@@ -322,46 +339,108 @@ while robot.step(timestep) != -1:
     lidar_sensor_readings = lidar.getRangeImage()
     lidar_sensor_readings = lidar_sensor_readings[83:len(lidar_sensor_readings)-83]
 
-    point_cloud_sensor_reading = lidar.getPointCloud()
-    point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
-
     # This is to improve efficiency
     cos_pose_theta= math.cos(pose_theta)
     sin_pose_theta= math.sin(pose_theta)
 
-    for i, point in enumerate(point_cloud_sensor_reading):
+    # (1-2/(4pi/3)*677/2-83) = 2=92
+    number_of_readings = len(lidar_sensor_readings)
 
-        # x, y, z are relative to lidar point origin.
-        rx = point.x
-        ry = point.y
-        rho = math.sqrt( rx** 2+ ry**2)
-        
-        # point location in world coords:
-        wx = cos_pose_theta * rx - sin_pose_theta * ry + pose_x
-        wy = sin_pose_theta * rx + cos_pose_theta * ry + pose_y
+    robot_X_map = int(pose_x * world_to_map_height)
+    robot_Y_map = int(pose_y * world_to_map_width)
+    
+    for i, rho in enumerate(lidar_sensor_readings):
+        alpha = lidar_offsets[i]
 
-        if wx >= world_height:
-            wx = world_height - .001
-        elif wx <= 0:
-            wx = .001
-        if  wy >= world_width:
-            wy = world_width - .001
-        elif wy <= 0:
-            wy = .001
-        if abs(rho) < LIDAR_SENSOR_MAX_RANGE:
-            mx = abs(int(wx * world_to_map_height))
-            my = abs(int(wy * world_to_map_width))
+        if rho >= LIDAR_SENSOR_MAX_RANGE:
+            if (92 < i and i < number_of_readings-92):
+                rx = math.cos(alpha)*LIDAR_SENSOR_MAX_RANGE
+                ry = -math.sin(alpha)*LIDAR_SENSOR_MAX_RANGE
+
+                # Convert detection from robot coordinates into world coordinates
+                wx = cos_pose_theta * rx - sin_pose_theta * ry + pose_x
+                wy = sin_pose_theta * rx + cos_pose_theta * ry + pose_y
+
+                if wx >= world_height:
+                    wx = world_height - .001
+                elif wx <= 0:
+                    wx = .001
+                if  wy >= world_width:
+                    wy = world_width - .001
+                elif wy <= 0:
+                    wy = .001
+
+                mx = int(wx * world_to_map_height)
+                my = int(wy * world_to_map_width)
+                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 1)
+                display.setColor(int(0x777777))
+                display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
+        else:
+
+            rx = math.cos(alpha)*rho
+            ry = -math.sin(alpha)*rho
+
+            # Convert detection from robot coordinates into world coordinates
+            wx = cos_pose_theta * rx - sin_pose_theta * ry + pose_x
+            wy = sin_pose_theta * rx + cos_pose_theta * ry + pose_y
+
+            if wx >= world_height:
+                wx = world_height - .001
+            elif wx <= 0:
+                wx = .001
+            if  wy >= world_width:
+                wy = world_width - .001
+            elif wy <= 0:
+                wy = .001
+
+            mx = int(wx * world_to_map_height)
+            my = int(wy * world_to_map_width)
             if map[mx, my] < 1:
                 map[mx, my] += 0.005
+            if (92 < i and i < number_of_readings-92):
+                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 1)
+                display.setColor(int(0x777777))
+                display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
             g = int(map[mx, my] * 255)
-            display.setColor(g*(256**2) + g*256 + g)
             display.setColor(g)
             display.drawPixel(my + 50,mx)
+    # plt.imshow(seen)
+    # plt.show()
 
-    mx = abs(int(pose_x * world_to_map_height))
-    my = abs(int(pose_y * world_to_map_width))
+    # point_cloud_sensor_reading = lidar.getPointCloud()
+    # point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
+
+    # for i, point in enumerate(point_cloud_sensor_reading):
+
+    #     # x, y, z are relative to lidar point origin.
+    #     rx = point.x
+    #     ry = point.y
+    #     rho = math.sqrt( rx** 2+ ry**2)
+        
+    #     # point location in world coords:
+    #     wx = cos_pose_theta * rx - sin_pose_theta * ry + pose_x
+    #     wy = sin_pose_theta * rx + cos_pose_theta * ry + pose_y
+
+    #     if wx >= world_height:
+    #         wx = world_height - .001
+    #     elif wx <= 0:
+    #         wx = .001
+    #     if  wy >= world_width:
+    #         wy = world_width - .001
+    #     elif wy <= 0:
+    #         wy = .001
+    #     if abs(rho) < LIDAR_SENSOR_MAX_RANGE:
+    #         mx = abs(int(wx * world_to_map_height))
+    #         my = abs(int(wy * world_to_map_width))
+    #         if map[mx, my] < 1:
+    #             map[mx, my] += 0.005
+    #         g = int(map[mx, my] * 255)
+    #         display.setColor(g*(256**2) + g*256 + g)
+    #         display.setColor(g)
+    #         display.drawPixel(my + 50,mx)
+
     display.setColor(int(0xFFFFFF))
-    display.drawPixel(my + 50,mx)
+    display.drawPixel(robot_Y_map + 50,robot_X_map)
 
 
     robot_parts["wheel_left_joint"].setVelocity(vL)
