@@ -1,37 +1,9 @@
 import math
-from scipy.signal import convolve2d
 
-def mode_manual(keyboard, MAX_SPEED, vL, vR):
-    # Manual control mode for robot. 
-    '''
-    Manual control mode for robot
-    keyboard: robot keyboard object.
-    MAX_Speed: robot max speed.
-    vL: robot current left wheel velocity.
-    cR. robot current right wheel velocity.
-    returns: vL, vR
-    '''
-    key = keyboard.getKey()
-    print(key)
-    if key == keyboard.LEFT :
-        vL = -MAX_SPEED
-        vR = MAX_SPEED
-    elif key == keyboard.RIGHT:
-        vL = MAX_SPEED
-        vR = -MAX_SPEED
-    elif key == keyboard.UP:
-        vL = MAX_SPEED
-        vR = MAX_SPEED
-    elif key == keyboard.DOWN:
-        vL = -MAX_SPEED
-        vR = -MAX_SPEED
-    elif key == ord(' '):
-        vL = 0
-        vR = 0
-    else:
-        vL *= 0.75
-        vR *= 0.75
-    return vL, vR
+
+# -------------------------------------------------------------------------
+# The majority of mapping code is included in the main file under lidar_map
+# -------------------------------------------------------------------------
 
 def obstacle_detected_roam(lidar):
 

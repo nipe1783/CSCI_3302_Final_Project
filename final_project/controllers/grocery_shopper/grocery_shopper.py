@@ -6,13 +6,14 @@ from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard, Displ
 import math
 import numpy as np
 import copy
+import random
 from scipy.signal import convolve2d
 from matplotlib import pyplot as plt
 import ikpy
 import ikpy.chain
 import cv2
 import heapq
-from mapping import mode_manual, obstacle_detected_roam
+from mapping import obstacle_detected_roam
 from computer_vision import goal_detect, goal_state
 from planning import rrt_star
 from localization import position_gps, navigate
@@ -120,8 +121,8 @@ goal_list = [item0, item1, item2, item3, item4, item5, item6, item7, item8, item
 
 # ------------------------------------------------------------------
 # Robot Modes
-# mode = "manual"
-mode = "autonomous"
+mode = "manual"
+# mode = "autonomous"
 # state = "openGripper"
 state = "exploration"
 counter = 0
@@ -164,9 +165,7 @@ while robot.step(timestep) != -1:
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     gx, gy, goal_detected = goal_detect(camera)
-    if mode == "manual":
-        mode_manual()
-    elif mode == "autonomous":
+    if mode == "autonomous":
         if state == "exploration":
             # Function to randomly explore map until goal is detected.
             # print("goal_detected: ", goal_detected)
@@ -325,7 +324,46 @@ while robot.step(timestep) != -1:
 
             robot_parts = manipulate_to(ik_arm([0.0, -0.2, 1.6], my_chain, arm_joints), robot_parts)
             state = "exploration"
-    
+
+    # Manual mode used for testing purposes only
+    elif mode == "manual":
+        key = keyboard.getKey()
+        if key == keyboard.LEFT :
+            vL = -MAX_SPEED
+            vR = MAX_SPEED
+        elif key == keyboard.RIGHT:
+            vL = MAX_SPEED
+            vR = -MAX_SPEED
+        elif key == keyboard.UP:
+            vL = MAX_SPEED
+            vR = MAX_SPEED
+        elif key == keyboard.DOWN:
+            vL = -MAX_SPEED
+            vR = -MAX_SPEED
+        elif key == ord(' '):
+            vL = 0
+            vR = 0
+        elif key == ord('I'):
+            print("captured image")
+            cv2.imwrite("tests/camera_img" + str(counter) + ".png", np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4)))
+            counter += 1
+        elif key == ord('C'):
+            # Part 1.4: Filter map and save to filesystem
+            np.save("tests/cspace.npy", convolve2d((map>=threshold).astype(np.uint8), robot_space, mode = "same") >= 1)
+            print("Configuration space file saved")
+        elif key == ord('M'):
+            # Part 1.4: Filter map and save to filesystem
+            np.save("tests/map.npy",(map>=threshold).astype(np.uint8))
+            print("Configuration space file saved")
+        elif key == ord('S'):
+            # Part 1.4: Filter map and save to filesystem
+            np.save("tests/seen.npy", seen)
+            print("Known space file saved")
+        else:
+            vL *= 0.75
+            vR *= 0.75
+
+
     # Odometer coardinates:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
 
@@ -398,46 +436,12 @@ while robot.step(timestep) != -1:
             if map[mx, my] < 1:
                 map[mx, my] += 0.005
             if (92 < i and i < number_of_readings-92):
-                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 1)
+                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 2)
                 display.setColor(int(0x777777))
                 display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
             g = int(map[mx, my] * 255)
             display.setColor(g)
             display.drawPixel(my + 50,mx)
-    # plt.imshow(seen)
-    # plt.show()
-
-    # point_cloud_sensor_reading = lidar.getPointCloud()
-    # point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
-
-    # for i, point in enumerate(point_cloud_sensor_reading):
-
-    #     # x, y, z are relative to lidar point origin.
-    #     rx = point.x
-    #     ry = point.y
-    #     rho = math.sqrt( rx** 2+ ry**2)
-        
-    #     # point location in world coords:
-    #     wx = cos_pose_theta * rx - sin_pose_theta * ry + pose_x
-    #     wy = sin_pose_theta * rx + cos_pose_theta * ry + pose_y
-
-    #     if wx >= world_height:
-    #         wx = world_height - .001
-    #     elif wx <= 0:
-    #         wx = .001
-    #     if  wy >= world_width:
-    #         wy = world_width - .001
-    #     elif wy <= 0:
-    #         wy = .001
-    #     if abs(rho) < LIDAR_SENSOR_MAX_RANGE:
-    #         mx = abs(int(wx * world_to_map_height))
-    #         my = abs(int(wy * world_to_map_width))
-    #         if map[mx, my] < 1:
-    #             map[mx, my] += 0.005
-    #         g = int(map[mx, my] * 255)
-    #         display.setColor(g*(256**2) + g*256 + g)
-    #         display.setColor(g)
-    #         display.drawPixel(my + 50,mx)
 
     display.setColor(int(0xFFFFFF))
     display.drawPixel(robot_Y_map + 50,robot_X_map)

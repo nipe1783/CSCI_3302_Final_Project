@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import ikpy
 
 def manipulate_to(new_pose, robot_parts):
     """Use IK to calculate position and then deliver position to joints
