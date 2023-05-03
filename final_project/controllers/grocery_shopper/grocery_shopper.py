@@ -330,7 +330,7 @@ while robot.step(timestep) != -1:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
 
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
+    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     
     # --------------
     # Lidar Mapping:
@@ -404,40 +404,6 @@ while robot.step(timestep) != -1:
             g = int(map[mx, my] * 255)
             display.setColor(g)
             display.drawPixel(my + 50,mx)
-    # plt.imshow(seen)
-    # plt.show()
-
-    # point_cloud_sensor_reading = lidar.getPointCloud()
-    # point_cloud_sensor_reading = point_cloud_sensor_reading[83:len(point_cloud_sensor_reading)-83]
-
-    # for i, point in enumerate(point_cloud_sensor_reading):
-
-    #     # x, y, z are relative to lidar point origin.
-    #     rx = point.x
-    #     ry = point.y
-    #     rho = math.sqrt( rx** 2+ ry**2)
-        
-    #     # point location in world coords:
-    #     wx = cos_pose_theta * rx - sin_pose_theta * ry + pose_x
-    #     wy = sin_pose_theta * rx + cos_pose_theta * ry + pose_y
-
-    #     if wx >= world_height:
-    #         wx = world_height - .001
-    #     elif wx <= 0:
-    #         wx = .001
-    #     if  wy >= world_width:
-    #         wy = world_width - .001
-    #     elif wy <= 0:
-    #         wy = .001
-    #     if abs(rho) < LIDAR_SENSOR_MAX_RANGE:
-    #         mx = abs(int(wx * world_to_map_height))
-    #         my = abs(int(wy * world_to_map_width))
-    #         if map[mx, my] < 1:
-    #             map[mx, my] += 0.005
-    #         g = int(map[mx, my] * 255)
-    #         display.setColor(g*(256**2) + g*256 + g)
-    #         display.setColor(g)
-    #         display.drawPixel(my + 50,mx)
 
     display.setColor(int(0xFFFFFF))
     display.drawPixel(robot_Y_map + 50,robot_X_map)
