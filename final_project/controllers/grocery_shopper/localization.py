@@ -44,6 +44,8 @@ def navigate(pose_x, pose_y, pose_theta, goal, AXLE_LENGTH, MAX_SPEED):
     dX = rho
     dTheta = 10*alpha
 
+    # print("rho: ", rho, " alpha: ", alpha)
+
     vL = dX - (dTheta*AXLE_LENGTH/2)
     vR = dX + (dTheta*AXLE_LENGTH/2)
     
