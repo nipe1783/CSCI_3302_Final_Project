@@ -176,7 +176,6 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 while robot.step(timestep) != -1:
 
     print(state)
-    print(robot.getDevice("torso_lift_joint").getValues)
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     gx, gy, goal_detected = goal_detect(camera)
@@ -383,12 +382,20 @@ while robot.step(timestep) != -1:
                 state = "height-docking"
 
         elif state == "height-docking":
-            if goal_z < -.25:
+            position = robot_parts["torso_lift_joint"].getTargetPosition()
+            print(position, goal_z)
+            if goal_z > -.25:
                 # goal is on top shelf
-                robot_parts["torso_lift_joint"].setPosition(0.35)
+                if position < 0.35:
+                    robot_parts["torso_lift_joint"].setPosition(position + 0.01)
+                else:
+                    state = "approach"
             else:
                 # goal is on middle shelf
-                robot_parts["torso_lift_joint"].setPosition(0)
+                if position > 0:
+                    robot_parts["torso_lift_joint"].setPosition(position - 0.01)
+                else:
+                    state = "approach"
 
         elif state == "approach":
             if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
@@ -473,7 +480,7 @@ while robot.step(timestep) != -1:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
 
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
+    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     
     # --------------
     # Lidar Mapping:
