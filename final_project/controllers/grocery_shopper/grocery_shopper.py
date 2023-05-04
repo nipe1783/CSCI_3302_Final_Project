@@ -251,6 +251,7 @@ while robot.step(timestep) != -1:
             counter = 0
 
         elif state == "navigation":
+            # UNCOMMENT THIS WHEN RRT IS READY
             # if counter >= len(waypoints):
             #     state = "theta-docking"
             #     counter = 0
