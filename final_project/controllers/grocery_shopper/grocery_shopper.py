@@ -61,6 +61,16 @@ right_gripper_enc=robot.getDevice("gripper_right_finger_joint_sensor")
 left_gripper_enc.enable(timestep)
 right_gripper_enc.enable(timestep)
 
+# Enable wheel encoders (position sensors)
+left_wheel = robot.getDevice("wheel_left_joint_sensor")
+left_wheel.enable(timestep)
+right_wheel = robot.getDevice("wheel_right_joint_sensor")
+right_wheel.enable(timestep)
+
+# Enable torso encoders (position sensors)
+# torso_enc = robot.getDevice("torso_lift_joint")
+# torso_enc.enable(timestep)
+
 # Enable Camera
 camera = robot.getDevice('camera')
 camera.enable(timestep)
@@ -165,6 +175,7 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 
 while robot.step(timestep) != -1:
 
+    print(state)
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     gx, gy, goal_detected = goal_detect(camera)
@@ -180,18 +191,18 @@ while robot.step(timestep) != -1:
                 # goal_queue has some goals in it. Robot navigates to them.
 
                 goal_location = goal_queue.pop(0)
+                goal_z = goal_location[2]
+                goal_xy = goal_location[0:2]
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: math.dist(point, goal_location) < 1
+                goal_check = lambda point: math.dist(point, goal_xy) < 1
                 bounds = np.array([[0, world_height],[0, world_width]])
-                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 1000, 0.2, state_is_goal=goal_check)[-1].getPath()
+                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.2, state_is_goal=goal_check)[-1].getPath()
                 prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
                 for point in waypoints:
                     point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
                     cv2.line(configuration_space, prevPoint, point, 1, 1)
                     prevPoint = point
-                plt.imshow(configuration_space)
-                plt.show()
                 state = "navigation"
                 counter = 0
 
@@ -228,7 +239,7 @@ while robot.step(timestep) != -1:
             goal_check = lambda point: seen[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
 
             bounds = np.array([[0, world_height],[0, world_width]])
-            waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 1000, 0.5, state_is_goal=goal_check)[-1].getPath()
+            waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.5, state_is_goal=goal_check)[-1].getPath()
             prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
             for point in waypoints:
                 point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
@@ -240,16 +251,118 @@ while robot.step(timestep) != -1:
             counter = 0
 
         elif state == "navigation":
-            if counter >= len(waypoints):
-                state = "orient"
-                counter = 0
-                continue
-            if math.dist((pose_x, pose_y), waypoints[counter]) < 0.5:
-                counter += 1
-            else:
-                vL, vR = navigate(pose_x, pose_y, pose_theta, waypoints[counter], AXLE_LENGTH, MAX_SPEED)
+            # UNCOMMENT THIS WHEN RRT IS READY
+            # if counter >= len(waypoints):
+            #     state = "theta-docking"
+            #     counter = 0
+            #     continue
+            # if math.dist((pose_x, pose_y), waypoints[counter]) < 0.5:
+            #     counter += 1
+            # else:
+            #     vL, vR = navigate(pose_x, pose_y, pose_theta, waypoints[counter], AXLE_LENGTH, MAX_SPEED)
+            state = "theta-docking"
+            counter = 0
 
-        elif state == "orient":
+        elif state == "theta-docking":
+
+            buffer = 0.01
+            if pose_theta > ( math.pi + buffer) and pose_theta < (3/2 * math.pi) :
+                # rotate robot to pose_theta = pi
+                vL = MAX_SPEED/10
+                vR = -MAX_SPEED/10
+            elif pose_theta > (3/2 * math.pi + buffer) and pose_theta < (2 * math.pi):
+                # rotate robot to pose_theta = 2 pi
+                vL = -MAX_SPEED/10
+                vR = MAX_SPEED/10
+            elif pose_theta > ( math.pi/2 + buffer) and pose_theta < math.pi:
+                # rotate robot to pose_theta = pi
+                vL = -MAX_SPEED/10
+                vR = MAX_SPEED/10
+            elif pose_theta > ( buffer) and pose_theta < (math.pi / 2):
+                # rotate robot to pose_theta = pi
+                vL = MAX_SPEED/10
+                vR = -MAX_SPEED/10
+            else:
+                vL = 0
+                vR = 0
+                counter, state = delay(50, state, "x-docking", counter)
+        elif state == "x-docking":
+            if pose_x > goal_xy[0] + buffer:
+                # move forward until goal.x == pose_x
+                if pose_theta > ( math.pi + buffer):
+                    # turn right
+                    vL = MAX_SPEED/5
+                    vR = MAX_SPEED/10
+                elif pose_theta < ( math.pi + buffer):
+                    # turn left
+                    vL = MAX_SPEED/10
+                    vR = MAX_SPEED/5
+                else:
+                    # move forward
+                    vL = MAX_SPEED/5
+                    vR = MAX_SPEED/5
+            elif pose_x < goal_xy[0] - buffer:
+                # move backwards until goal.x == pose_x
+                if pose_theta > ( math.pi + buffer):
+                    # turn right
+                    vL = -MAX_SPEED/15
+                    vR = -MAX_SPEED/10
+                elif pose_theta < ( math.pi + buffer):
+                    # turn left
+                    vL = -MAX_SPEED/10
+                    vR = -MAX_SPEED/15
+                else:
+                    # move backwards
+                    vL = -MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+            else:
+                vL = 0
+                vR = 0
+                counter, state = delay(50, state, "re-theta-docking", counter)
+        elif state == "re-theta-docking":
+            buffer = 0.01
+            if pose_y < goal_xy[1]:
+                # robot needs to rotate to pi/2
+                if pose_theta > (math.pi/2 + buffer) :
+                    # vel = (pose_theta/ (math.pi/2)** 5)  * MAX_SPEED * .05
+                    # # rotate robot clockwise
+                    # vL = vel
+                    # vR = -vel
+                    vL = MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+                elif pose_theta < (math.pi/2 - buffer):
+                    # vel = ((math.pi/2) / pose_theta ** 5)  * MAX_SPEED * .05
+                    # # rotate robot ccw
+                    # vL = -vel
+                    # vR = vel
+                    vL = -MAX_SPEED/10
+                    vR = MAX_SPEED/10
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "orient-docking", counter)
+            else:
+                # robot needs to rotate to 3pi/2
+                if pose_theta < (3*math.pi/2 - buffer) :
+                    # vel = (pose_theta/ (math.pi/2)** 5)  * MAX_SPEED * .05
+                    # # rotate robot clockwise
+                    # vL = vel
+                    # vR = -vel
+                    vL = -MAX_SPEED/10
+                    vR = MAX_SPEED/10
+                elif pose_theta > (3*math.pi/2 + buffer):
+                    # vel = ((math.pi/2) / pose_theta ** 5)  * MAX_SPEED * .05
+                    # # rotate robot ccw
+                    # vL = -vel
+                    # vR = vel
+                    vL = MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "orient-docking", counter)
+
+        elif state == "orient-docking":
             if gx == -1 and gy == -1:
                 counter, state = delay(20, state, "exploration", counter)
                 continue
@@ -257,21 +370,37 @@ while robot.step(timestep) != -1:
                 counter = 0
             if gx < 110:
                 # robot rotate left
-                vL = -MAX_SPEED/5
-                vR = MAX_SPEED/15
+                vL = -MAX_SPEED/10
+                vR = MAX_SPEED/20
             elif gx > 130:
                 # robot rotate right
-                vL = MAX_SPEED/15
-                vR = -MAX_SPEED/5
+                vL = MAX_SPEED/20
+                vR = -MAX_SPEED/10
             else:
                 # go forward
                 vL = 0
                 vR = 0
-                state = "approach"
+                state = "height-docking"
+
+        elif state == "height-docking":
+            position = robot_parts["torso_lift_joint"].getTargetPosition()
+            print(position, goal_z)
+            if goal_z > -.25:
+                # goal is on top shelf
+                if position < 0.35:
+                    robot_parts["torso_lift_joint"].setPosition(position + 0.01)
+                else:
+                    state = "approach"
+            else:
+                # goal is on middle shelf
+                if position > 0:
+                    robot_parts["torso_lift_joint"].setPosition(position - 0.01)
+                else:
+                    state = "approach"
 
         elif state == "approach":
             if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
-                state = "orient"
+                state = "orient-docking"
             if lidar.getRangeImage()[333] > 1:
                 vL = MAX_SPEED/5
                 vR = MAX_SPEED/5
