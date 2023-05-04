@@ -63,21 +63,4 @@ def navigate(pose_x, pose_y, pose_theta, goal, AXLE_LENGTH, MAX_SPEED):
         else:
             vR = -speed
     return vL, vR
-
-def docking(goal, pose_x, pose_y, pose_theta, vL, vR, mode):
-    '''
-    once navigation is complete docking will center goal on robots screen and make the robot perpendicular to the shelf.
-
-    returns:
-        vL:
-        vR:
-        mode:
-    '''
-    
-
-    # case 1: robot is facing forward to the left. pose_theta > pi and pose_theta < 3pi/2
-    if pose_theta > math.pi and pose_theta < (3/2 * math.pi):
-
-        # rotate robot to pose_theta = pi
-        pass
     
