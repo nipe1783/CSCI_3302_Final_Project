@@ -76,7 +76,8 @@ def goal_state(camera, pose_x, pose_y, pose_theta):
             pose = object.getPosition()
             wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
             wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
-            return [wx, wy]
+            wz = pose[2]
+            return [wx, wy, wz]
         
 def add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue):
     yellow = [255.0, 255.0, 0.0]
@@ -87,8 +88,7 @@ def add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue):
             wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
             wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
             wz = pose[2]
-            # goal = [wx, wy, wz]
-            goal = [wx, wy]
+            goal = [wx, wy, wz]
             if(not near(goal, goal_queue)):
                 goal_queue.append(goal)
     return goal_queue

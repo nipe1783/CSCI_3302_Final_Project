@@ -67,6 +67,10 @@ left_wheel.enable(timestep)
 right_wheel = robot.getDevice("wheel_right_joint_sensor")
 right_wheel.enable(timestep)
 
+# Enable torso encoders (position sensors)
+# torso_enc = robot.getDevice("torso_lift_joint")
+# torso_enc.enable(timestep)
+
 # Enable Camera
 camera = robot.getDevice('camera')
 camera.enable(timestep)
@@ -172,7 +176,7 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 while robot.step(timestep) != -1:
 
     print(state)
-
+    print(robot.getDevice("torso_lift_joint").getValues)
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     gx, gy, goal_detected = goal_detect(camera)
@@ -188,11 +192,13 @@ while robot.step(timestep) != -1:
                 # goal_queue has some goals in it. Robot navigates to them.
 
                 goal_location = goal_queue.pop(0)
+                goal_z = goal_location[2]
+                goal_xy = goal_location[0:2]
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: math.dist(point, goal_location) < 1
+                goal_check = lambda point: math.dist(point, goal_xy) < 1
                 bounds = np.array([[0, world_height],[0, world_width]])
-                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 1000, 0.2, state_is_goal=goal_check)[-1].getPath()
+                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.2, state_is_goal=goal_check)[-1].getPath()
                 prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
                 for point in waypoints:
                     point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
@@ -234,7 +240,7 @@ while robot.step(timestep) != -1:
             goal_check = lambda point: seen[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
 
             bounds = np.array([[0, world_height],[0, world_width]])
-            waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 1000, 0.5, state_is_goal=goal_check)[-1].getPath()
+            waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.5, state_is_goal=goal_check)[-1].getPath()
             prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
             for point in waypoints:
                 point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
@@ -281,7 +287,7 @@ while robot.step(timestep) != -1:
                 vR = 0
                 counter, state = delay(50, state, "x-docking", counter)
         elif state == "x-docking":
-            if pose_x > goal_location[0] + buffer:
+            if pose_x > goal_xy[0] + buffer:
                 # move forward until goal.x == pose_x
                 if pose_theta > ( math.pi + buffer):
                     # turn right
@@ -295,7 +301,7 @@ while robot.step(timestep) != -1:
                     # move forward
                     vL = MAX_SPEED/5
                     vR = MAX_SPEED/5
-            elif pose_x < goal_location[0] - buffer:
+            elif pose_x < goal_xy[0] - buffer:
                 # move backwards until goal.x == pose_x
                 if pose_theta > ( math.pi + buffer):
                     # turn right
@@ -315,7 +321,7 @@ while robot.step(timestep) != -1:
                 counter, state = delay(50, state, "re-theta-docking", counter)
         elif state == "re-theta-docking":
             buffer = 0.01
-            if pose_y < goal_location[1]:
+            if pose_y < goal_xy[1]:
                 # robot needs to rotate to pi/2
                 if pose_theta > (math.pi/2 + buffer) :
                     # vel = (pose_theta/ (math.pi/2)** 5)  * MAX_SPEED * .05
@@ -374,7 +380,15 @@ while robot.step(timestep) != -1:
                 # go forward
                 vL = 0
                 vR = 0
-                state = "approach"
+                state = "height-docking"
+
+        elif state == "height-docking":
+            if goal_z < -.25:
+                # goal is on top shelf
+                robot_parts["torso_lift_joint"].setPosition(0.35)
+            else:
+                # goal is on middle shelf
+                robot_parts["torso_lift_joint"].setPosition(0)
 
         elif state == "approach":
             if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
