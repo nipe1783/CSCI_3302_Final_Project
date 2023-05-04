@@ -1,6 +1,9 @@
 import numpy as np
 import math
 import random
+import cv2
+from matplotlib import pyplot as plt
+
 
 class Node:
     """
@@ -182,3 +185,11 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
     print("No goal given or path not found")
     return node_list
     # print(waypoints)
+def visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height):
+    prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
+    for point in waypoints:
+        point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
+        cv2.line(configuration_space, prevPoint, point, 1, 1)
+        prevPoint = point
+    plt.imshow(configuration_space)
+    plt.show()

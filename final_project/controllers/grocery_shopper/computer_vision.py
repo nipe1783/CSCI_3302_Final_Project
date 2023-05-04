@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import math
 
-def goal_detect(camera):
+def goal_detect(camera, pose_x, pose_y, pose_theta, goal_queue):
 
     '''
     detects yellow blob on camera. returns location of blob on image and if there is a blob detected.
@@ -51,7 +51,22 @@ def goal_detect(camera):
         cx = int(M['m10'] / M['m00'])
         cy = int(M['m01'] / M['m00'])
         cv2.circle(smoothed_copy, (cx, cy), 5, (0, 0, 255), -1)
-
+    yellow = [255.0, 255.0, 0.0]
+    for object in camera.getRecognitionObjects():
+        color = object.getColors()
+        if (color[0]*255 == yellow[0] and color[1]*255 == yellow[1] and color[2]*255 == yellow[2]):
+            pose = object.getPosition()
+            wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
+            wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
+            wz = pose[2]
+            # goal = [wx, wy, wz]
+            goal = [wx, wy]
+            goalNew = True
+            for gl in goal_queue:
+                if(math.dist(goal, gl)):
+                    goalNew = False
+            if goalNew:
+                goal_queue.append(goal)
     if len(filtered_contours) > 0:
 
         # location of first goal detected
@@ -59,20 +74,21 @@ def goal_detect(camera):
         M = cv2.moments(c)
         gx = int(M['m10'] / M['m00'])
         gy = int(M['m01'] / M['m00'])
-        return gx, gy, True
+        return gx, gy, goal_queue
     else:
-        return -1, -1, False
+        return -1, -1, goal_queue
     
-def goal_state(camera, pose_x, pose_y, pose_theta):
-    yellow = [255.0, 255.0, 0.0]
-    for object in camera.getRecognitionObjects():
-        color = object.getColors()
-        color[0] = color[0]*255
-        color[1] = color[1]*255
-        color[2] = color[2]*255
-        # print(color[0], color[1], color[2])
-        if (color[0] == yellow[0] and color[1] == yellow[1] and color[2] == yellow[2]):
-            pose = object.getPosition()
-            wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
-            wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
-            return [wx, wy]
+# def add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue):
+#     yellow = [255.0, 255.0, 0.0]
+#     for object in camera.getRecognitionObjects():
+#         color = object.getColors()
+#         if (same_color(color, yellow)):
+#             pose = object.getPosition()
+#             wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
+#             wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
+#             wz = pose[2]
+#             # goal = [wx, wy, wz]
+#             goal = [wx, wy]
+#             if(not near(goal, goal_queue)):
+#                 goal_queue.append(goal)
+#     return goal_queue
