@@ -40,16 +40,21 @@ def navigate(pose_x, pose_y, pose_theta, goal, AXLE_LENGTH, MAX_SPEED):
     alpha = (2 * math.pi + math.atan2(pose_x - goal[0], goal[1] - pose_y) - pose_theta) % (2 * math.pi)
     if alpha > math.pi:
         alpha = alpha - (2*math.pi)
-    alpha *= 100
-
     print("rho: ", rho, " alpha: ", alpha)
+    # speed = MAX_SPEED * abs(alpha/math.pi)
+    # if alpha < -0.1:
+    #     return speed, -speed
+    # elif alpha > 0.1:
+    #     return -speed, speed
 
-    # vL = dX - (dTheta*AXLE_LENGTH/2)
-    # vR = dX + (dTheta*AXLE_LENGTH/2)
-    vL = rho - (alpha*AXLE_LENGTH/2)
-    vR = rho + (alpha*AXLE_LENGTH/2)
+
+
+    dTheta = 100*alpha
+
+    vL = rho - (dTheta*AXLE_LENGTH/2)
+    vR = rho + (dTheta*AXLE_LENGTH/2)
     
-    speed = min(MAX_SPEED * 0.25, rho*10)
+    speed = MAX_SPEED * 0.5
     if abs(vL) > abs(vR):
         vR = vR/abs(vL) * speed
         if vL > 0:
@@ -63,14 +68,21 @@ def navigate(pose_x, pose_y, pose_theta, goal, AXLE_LENGTH, MAX_SPEED):
         else:
             vR = -speed
     return vL, vR
-    # speed = 0.8*MAX_SPEED * (abs(alpha/math.pi))+0.2
-    # if alpha < -0.05:
-    #     return speed, 0.5*speed
-    # elif alpha > 0.05:
-    #     return 0.5*speed, speed
-    # # elif alpha < -0.1:
-    # #     return min(MAX_SPEED * rho, MAX_SPEED)*0.1, 0
-    # # elif alpha > 0.1:
-    # #     return 0, min(MAX_SPEED * rho, MAX_SPEED)*0.1
-    # else:
-    #     return min(MAX_SPEED * rho, MAX_SPEED)*0.5, min(MAX_SPEED * rho, MAX_SPEED)*0.5
+
+def docking(goal, pose_x, pose_y, pose_theta, vL, vR, mode):
+    '''
+    once navigation is complete docking will center goal on robots screen and make the robot perpendicular to the shelf.
+
+    returns:
+        vL:
+        vR:
+        mode:
+    '''
+    
+
+    # case 1: robot is facing forward to the left. pose_theta > pi and pose_theta < 3pi/2
+    if pose_theta > math.pi and pose_theta < (3/2 * math.pi):
+
+        # rotate robot to pose_theta = pi
+        pass
+    

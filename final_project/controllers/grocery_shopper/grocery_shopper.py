@@ -149,18 +149,20 @@ while robot.step(timestep) != -1:
             if goal_queue:
                 # goal_queue has some goals in it. Robot navigates to them.
 
-                goal_location = goal_queue.pop(0)
+                goal_location = goal_queue[0]
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: math.dist(point, goal_location) < 1
+                goal_check = lambda point: math.dist(point, goal_location) < 1.5
                 bounds = np.array([[0, world_height],[0, world_width]])
-                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 500, 1, state_is_goal=goal_check)[-1].getPath()
-                visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
-                state = "navigation"
-                counter = 0
+                node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_location), 500, 0.5, state_is_goal=goal_check)
+                if pathFound: 
+                    waypoints = node_list[-1].getPath()
+                    visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
+                    state = "navigation"
+                    counter = 0
             elif waypoints:
                 # path following to explore unseen space
-                if lidar_sensor_readings[333] < 0.4 or lidar_sensor_readings[230] < 0.6  or lidar_sensor_readings[427] < 0.6:
+                if lidar_sensor_readings[333] < 0.3 or lidar_sensor_readings[230] < 0.5  or lidar_sensor_readings[427] < 0.5:
                     print("recalculating")
                     counter = 0
                     waypoints = []
@@ -178,14 +180,20 @@ while robot.step(timestep) != -1:
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
                 goal_check = lambda point: seen[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))]
                 bounds = np.array([[0, world_height],[0, world_width]])
-                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), None, 1000, 1, state_is_goal=goal_check)[-1].getPath()
-                visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
+                node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), None, 200, 1, state_is_goal=goal_check)
+                if pathFound: 
+                    waypoints = node_list[-1].getPath()
+                    visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
+                    state = "navigation"
+                    counter = 0
 
         elif state == "navigation":
-            if lidar_sensor_readings[333] < 0.4 or lidar_sensor_readings[230] < 0.6  or lidar_sensor_readings[427] < 0.6:
+            if lidar_sensor_readings[333] < 0.3 or lidar_sensor_readings[230] < 0.5  or lidar_sensor_readings[427] < 0.5:
                 print("path invalid, recalculating")
                 counter = 0
                 waypoints = []
+                vL = -MAX_SPEED
+                vR = -MAX_SPEED
                 state = "exploration"
             elif counter >= len(waypoints):
                 state = "orient"
@@ -382,8 +390,8 @@ while robot.step(timestep) != -1:
                 mx = int(wx * world_to_map_height)
                 my = int(wy * world_to_map_width)
                 cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 0, 2)
-                display.setColor(int(0x777777))
-                display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
+                # display.setColor(int(0x777777))
+                # display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
         else:
 
             rx = math.cos(alpha)*rho
@@ -408,8 +416,8 @@ while robot.step(timestep) != -1:
                 map[mx, my] += 0.005
             if (92 < i and i < number_of_readings-92):
                 cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 2)
-                display.setColor(int(0x777777))
-                display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
+                # display.setColor(int(0x777777))
+                # display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
             g = int(map[mx, my] * 255)
             display.setColor(g)
             display.drawPixel(my + 50,mx)

@@ -117,6 +117,9 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
     :returns List of RRT graph nodes
     '''
     node_list = []
+    if not state_is_valid(starting_point):
+        print("invalid starting point")
+        return node_list, False
     node_list.append(Node(starting_point, parent=None)) # Add Node at starting point with no parent
     if r is None or r > delta_q:
         r=delta_q
@@ -170,10 +173,10 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
                 #         node_list.append(node)
                 #         return node_list
                 if goal_point is not None and math.dist(goal_point, point) == 0:
-                    return node_list
+                    return node_list, True
                 if state_is_goal is not None:
                     if state_is_goal(point):
-                        return node_list
+                        return node_list, True
                 break
     # if goal_point == None:
     #     return node_list
@@ -184,4 +187,4 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
     # TODO: Your code here
     # TODO: Make sure to add every node you create onto node_list, and to set node.parent and node.path_from_parent for each
     print("No goal given or path not found")
-    return node_list
+    return node_list, False
