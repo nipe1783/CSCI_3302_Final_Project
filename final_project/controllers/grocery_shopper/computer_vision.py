@@ -42,6 +42,7 @@ def goal_detect(camera):
     # Identify the center of the blob by calculating the centroid of the contour
 
     filtered_contours = []
+    blobs_gxgy = []
     for c in contours:
         area = cv2.contourArea(c)
         if area > 100:
@@ -52,15 +53,14 @@ def goal_detect(camera):
         cx = int(M['m10'] / M['m00'])
         cy = int(M['m01'] / M['m00'])
         cv2.circle(smoothed_copy, (cx, cy), 5, (0, 0, 255), -1)
+        blobs_gxgy.append([cx, cy])
 
-    if len(filtered_contours) > 0:
+    if len(blobs_gxgy) > 0:
 
-        # location of first goal detected
-        c = filtered_contours[0]
-        M = cv2.moments(c)
-        gx = int(M['m10'] / M['m00'])
-        gy = int(M['m01'] / M['m00'])
-        return gx, gy, True
+        # location of middle goal detected
+        z = 123 # value for middle gx
+        closest_blob = min(blobs_gxgy, key=lambda x: abs(x[0] - z))
+        return closest_blob[0], closest_blob[1], True
     else:
         return -1, -1, False
     

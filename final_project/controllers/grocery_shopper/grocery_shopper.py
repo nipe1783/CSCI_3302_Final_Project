@@ -148,14 +148,6 @@ world_to_map_height = map_height / world_height
 map = np.zeros(shape=[map_height,map_width])
 seen = np.zeros(shape=[map_height,map_width], dtype='uint8')
 
-for goal in goal_list:
-    goal[0] = world_height/2  - goal[0]
-    goal[1] = world_width/2 - goal[1] 
-    mx = abs(int(goal[0] * world_to_map_height))
-    my = abs(int(goal[1] * world_to_map_width))
-    display.setColor(int(0xFFFF00))
-    display.drawPixel(my + 50,mx)
-
 heights = [0.575, 1.075]
 active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False]
 arm_joints =  [0, 0, 0.35, 0,  0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 0, 0]
@@ -175,10 +167,12 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 
 while robot.step(timestep) != -1:
 
-    # print(state
+    
+
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     gx, gy, goal_detected = goal_detect(camera)
+    print(state)
     if mode == "manual":
         mode_manual()
 
@@ -284,40 +278,66 @@ while robot.step(timestep) != -1:
             else:
                 vL = 0
                 vR = 0
-                counter, state = delay(50, state, "x-docking", counter)
-        elif state == "x-docking":
-            if pose_x > goal_xy[0] + buffer:
-                # move forward until goal.x == pose_x
-                if pose_theta > ( math.pi + buffer):
-                    # turn right
-                    vL = MAX_SPEED/5
-                    vR = MAX_SPEED/10
-                elif pose_theta < ( math.pi + buffer):
-                    # turn left
-                    vL = MAX_SPEED/10
-                    vR = MAX_SPEED/5
+                counter, state = delay(50, state, "height-docking", counter)
+
+        elif state == "height-docking":
+            torso_position = robot_parts["torso_lift_joint"].getTargetPosition()
+            if goal_z > -.45:
+                # goal is on top shelf
+                goal_shelf = "top"
+                if torso_position < 0.35:
+                    robot_parts["torso_lift_joint"].setPosition(torso_position + 0.01)
                 else:
-                    # move forward
-                    vL = MAX_SPEED/5
-                    vR = MAX_SPEED/5
-            elif pose_x < goal_xy[0] - buffer:
-                # move backwards until goal.x == pose_x
-                if pose_theta > ( math.pi + buffer):
-                    # turn right
-                    vL = -MAX_SPEED/15
-                    vR = -MAX_SPEED/10
-                elif pose_theta < ( math.pi + buffer):
-                    # turn left
-                    vL = -MAX_SPEED/10
-                    vR = -MAX_SPEED/15
-                else:
-                    # move backwards
-                    vL = -MAX_SPEED/10
-                    vR = -MAX_SPEED/10
+                    state = "x-docking"
             else:
-                vL = 0
-                vR = 0
-                counter, state = delay(50, state, "re-theta-docking", counter)
+                # goal is on middle shelf
+                goal_shelf = "middle"
+                if torso_position > 0:
+                    robot_parts["torso_lift_joint"].setPosition(torso_position - 0.01)
+                else:
+                    state = "x-docking"
+
+        elif state == "x-docking":
+            if pose_theta > (math.pi - math.pi/6) and pose_theta < (math.pi + math.pi/6):
+                # robot is facing in -x direction.
+                if pose_x > goal_xy[0] + buffer:
+                    # move forward until goal.x == pose_x
+                    if pose_theta > ( math.pi + buffer):
+                        # turn right
+                        vL = MAX_SPEED/5
+                        vR = MAX_SPEED/10
+                    elif pose_theta < ( math.pi + buffer):
+                        # turn left
+                        vL = MAX_SPEED/10
+                        vR = MAX_SPEED/5
+                    else:
+                        # move forward
+                        vL = MAX_SPEED/5
+                        vR = MAX_SPEED/5
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "re-theta-docking", counter)
+            else:
+                # robot is facing in +x direction.
+                if pose_x < goal_xy[0] - buffer:
+                    # move forward until goal.x == pose_x
+                    if pose_theta < (buffer):
+                        # turn right
+                        vL = MAX_SPEED/5
+                        vR = MAX_SPEED/10
+                    elif pose_theta > ( 2*math.pi - buffer):
+                        # turn left
+                        vL = MAX_SPEED/10
+                        vR = MAX_SPEED/5
+                    else:
+                        # move forward
+                        vL = MAX_SPEED/5
+                        vR = MAX_SPEED/5
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "re-theta-docking", counter)
         elif state == "re-theta-docking":
             buffer = 0.01
             if pose_y < goal_xy[1]:
@@ -333,6 +353,7 @@ while robot.step(timestep) != -1:
                 else:
                     vL = 0
                     vR = 0
+                    goal_theta = math.pi/2
                     counter, state = delay(50, state, "orient-docking", counter)
             else:
                 # robot needs to rotate to 3pi/2
@@ -347,6 +368,7 @@ while robot.step(timestep) != -1:
                 else:
                     vL = 0
                     vR = 0
+                    goal_theta = math.pi * 3/2
                     counter, state = delay(50, state, "orient-docking", counter)
 
         elif state == "orient-docking":
@@ -367,27 +389,11 @@ while robot.step(timestep) != -1:
                 # go forward
                 vL = 0
                 vR = 0
-                state = "height-docking"
-
-        elif state == "height-docking":
-            torso_position = robot_parts["torso_lift_joint"].getTargetPosition()
-            if goal_z > -.45:
-                # goal is on top shelf
-                goal_shelf = "top"
-                if torso_position < 0.35:
-                    robot_parts["torso_lift_joint"].setPosition(torso_position + 0.01)
-                else:
-                    state = "approach"
-            else:
-                # goal is on middle shelf
-                goal_shelf = "middle"
-                if torso_position > 0:
-                    robot_parts["torso_lift_joint"].setPosition(torso_position - 0.01)
-                else:
-                    state = "approach"
+                state = "approach"
 
         elif state == "approach":
-            if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
+            error_x = goal_xy[0] - pose_x
+            if not (error_x > -.02 and error_x < 0.02):
                 state = "orient-docking"
             if lidar.getRangeImage()[333] > 1:
                 vL = MAX_SPEED/5
@@ -408,12 +414,12 @@ while robot.step(timestep) != -1:
         elif state == "setArmToReady":
             angle = (123-gx)/120.
             goal_point, goal_orientation = goal_locate(camera)
-            goal_point[0] += .1
+            goal_point[0] += .08
             goal_point[1] += .05
             if goal_shelf == "top":
-                goal_point[2] = 1.01
+                goal_point[2] = 1.04
             elif goal_shelf == "middle":
-                goal_point[2] = 0.9
+                goal_point[2] = 0.89
             position = robot_parts["arm_6_joint"].getTargetPosition()
             arm_queue = []
             points = np.linspace([0,0,1.05], goal_point)
@@ -471,10 +477,8 @@ while robot.step(timestep) != -1:
         elif state == "movingArmToBasket":
             if counter % 10 == 0:
                 if len(arm_queue) > int(counter/10):
-                    print("counter: ", int(counter/10) )
                     robot_parts = manipulate_to(arm_queue[int(counter/10)], robot_parts)
                     arm_7_position = robot_parts["arm_7_joint"].getTargetPosition()               
-                    print(arm_7_position)
                 else:
                     state = "releaseObject"
                     vL = 0
@@ -485,7 +489,8 @@ while robot.step(timestep) != -1:
         elif state == "releaseObject":
             robot_parts["gripper_left_finger_joint"].setPosition(0.045)
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
-            counter, state = delay(30, state, "stowArm", counter)
+            robot_parts["arm_7_joint"].setPosition(0)
+            counter, state = delay(100, state, "stowArm", counter)
 
         elif state == "stowArm":
 
