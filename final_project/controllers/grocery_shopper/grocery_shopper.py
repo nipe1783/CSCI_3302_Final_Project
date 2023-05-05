@@ -450,10 +450,10 @@ while robot.step(timestep) != -1:
                 state = "setArmToReady"
 
         elif state == "setArmToReady":
-            angle = (123-gx)/120.
-            goal_point, goal_orientation = goal_locate(camera)
+            goal_point, goal_orientation, position_on_camera = goal_locate(camera)
+            angle = (123-position_on_camera[0])/120
             goal_point[0] += .07
-            goal_point[1] += .05
+            goal_point[1] += 0.055
             if goal_shelf == "top":
                 goal_point[2] = 1.04
             elif goal_shelf == "middle":
@@ -479,11 +479,7 @@ while robot.step(timestep) != -1:
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            counter, state = delay(40, state, "lift", counter)   
-
-        elif state == "lift":
-            robot_parts = manipulate_to(ik_arm([0.9, -0.05, 0.82 + arm_joints[2] ], my_chain, arm_joints), robot_parts)
-            state = "backOut"
+            counter, state = delay(40, state, "backOut", counter)   
 
         elif state == "backOut":
             vL= -MAX_SPEED/2
@@ -614,8 +610,8 @@ while robot.step(timestep) != -1:
             display.setColor(g)
             display.drawPixel(my + 50,mx)
 
-    display.setColor(int(0xFFFFFF))
-    display.drawPixel(robot_Y_map + 50,robot_X_map)
+    # display.setColor(int(0xFFFFFF))
+    # display.drawPixel(robot_Y_map + 50,robot_X_map)
     
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
