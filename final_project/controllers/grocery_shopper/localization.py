@@ -2,6 +2,8 @@ import math
 
 MAX_SPEED = 7.0  # [rad/s]
 AXLE_LENGTH = 0.4044 # m
+TURN_1_ANGLE = 0.4
+TURN_2_ANGLE = 0.05
 
 
 def odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH):
@@ -41,51 +43,55 @@ def position_gps(gps, compass, world_height, world_width):
 
 def navigate(pose_x, pose_y, pose_theta, goal, navState):
     rho = math.dist((pose_x, pose_y), goal)
-    alpha = (2 * math.pi + math.atan2(pose_x - goal[0], goal[1] - pose_y) - pose_theta) % (2 * math.pi)
+    alpha = (2 * math.pi + math.atan2(goal[1] - pose_y, goal[0] - pose_x) - pose_theta) % (2 * math.pi)
     if alpha > math.pi:
         alpha = alpha - (2*math.pi)
-    print("rho: ", rho, " alpha: ", alpha, "navState: ", navState)
-    speed = MAX_SPEED * abs(alpha/math.pi)
+    print("Current xy: ", (pose_x,pose_y), "pose_theta: ", pose_theta, "goal: ", goal, "rho: ", rho, " alpha: ", alpha, "navState: ", navState)
+    
     # navStates: 0:initial, 1: startLeft, 2: startRight, 3: endLeft, 4: endRight, 5: advance
     if navState == 0:
-        if alpha < 0:
-            return MAX_SPEED/2, -MAX_SPEED/2, 1
-        elif alpha > 0:
-            return -MAX_SPEED/2, MAX_SPEED/2, 2
+    #     if alpha < 0.05:
+    #         return MAX_SPEED/2, -MAX_SPEED/2, 1
+    #     elif alpha > 0.05:
+    #         return -MAX_SPEED/2, MAX_SPEED/2, 2
+    #     else:
+    #         return 0,0,5
+    # elif navState == 1:
+    #     if alpha < TURN_1_ANGLE:
+    #         return 0.3*MAX_SPEED, -0.25 * MAX_SPEED, 1
+    #     else:
+    #         return 0,0,3
         
-    elif navState == 1:
-        if alpha < 0.1:
-            return MAX_SPEED/7, -MAX_SPEED/7, 1
-        else:
-            return 0,0,3
+    # elif navState == 2:
+    #     if alpha > -TURN_1_ANGLE:
+    #         speed = MAX_SPEED * abs(alpha/math.pi)
+    #         return -0.25 * MAX_SPEED, 0.3 * MAX_SPEED, 2
+    #     else:
+    #         return 0,0,4
         
-    elif navState == 2:
-        if alpha > -0.1:
-            return -MAX_SPEED/7, MAX_SPEED/7, 2
-        else:
-            return 0,0,4
+    # elif navState == 3:
+    #     if alpha > TURN_2_ANGLE:
+    #         speed = MAX_SPEED * abs(alpha/math.pi)
+    #         return 0.5*speed, 2*speed, 3
+    #     else:
+    #         return 0,0,5
         
-    elif navState == 3:
-        if alpha > 0.01:
-            return 0.5*speed, 2*speed, 3
-        else:
-            return 0,0,5
+    # elif navState == 4:
+    #     if alpha < -TURN_2_ANGLE:
+    #         speed = MAX_SPEED * abs(alpha/math.pi)
+    #         return 2*speed, 0.5*speed, 4
+    #     else:
+    #         return 0,0,5
         
-    elif navState == 4:
-        if alpha < -0.01:
-            return 2*speed, 0.5*speed, 4
-        else:
-            return 0,0,5
-        
-    else:
-        dTheta = 5*alpha
+    # else:
+        dTheta = 10*alpha
         vL = rho - (dTheta*AXLE_LENGTH/2)
         vR = rho + (dTheta*AXLE_LENGTH/2)
         speed = MAX_SPEED/2
         if abs(vL) > abs(vR):
-            return speed, vR/abs(vL) * speed, 5
+            return speed, vR/abs(vL) * speed, 0
         else: 
-            return vL/abs(vR) * speed, speed, 5
+            return vL/abs(vR) * speed, speed, 0
 
 
     # dTheta = 5*alpha

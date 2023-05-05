@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import ikpy
+import ikpy.chain
 
 active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False]
 my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_links)

@@ -6,13 +6,9 @@ from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard, Displ
 import math
 import numpy as np
 import copy
-import random
 from scipy.signal import convolve2d
 from matplotlib import pyplot as plt
-import ikpy
-import ikpy.chain
 import cv2
-import heapq
 from mapping import obstacle_detected_roam
 from computer_vision import goal_detect
 from planning import rrt_star, visualize_path
@@ -181,7 +177,7 @@ while robot.step(timestep) != -1:
                 elif math.dist((pose_x, pose_y), waypoints[counter]) < 0.4:
                     counter+=1
                 else:
-                    vL, vR, navState = navigate(pose_x, pose_y, pose_theta, waypoints[counter])
+                    vL, vR, navState = navigate(pose_x, pose_y, pose_theta, waypoints[counter], navState)
             else:
                 # go to unexplored territory
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
@@ -193,7 +189,6 @@ while robot.step(timestep) != -1:
                 if pathFound: 
                     waypoints = node_list[-1].getPath()
                     visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
-                    state = "navigation"
                     counter = 0
 
         elif state == "navigation":
