@@ -1,5 +1,9 @@
 import math
 import numpy as np
+import ikpy
+
+active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False]
+my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_links)
 
 def manipulate_to(new_pose, robot_parts):
     """Use IK to calculate position and then deliver position to joints
@@ -26,11 +30,8 @@ def manipulate_to(new_pose, robot_parts):
 
     return robot_parts
 
-def ik_arm(target_position, my_chain, arm_joints, target_orientation=None, orientation_mode = None, initial = None, angle = None):
-    if initial is None:
-        initial = arm_joints
-    # else:
-        # target_frame[:3, :3] = [[0,1,0],[1,0,0],[0,0,1]]
+
+def ik_arm(target_position, initial, target_orientation=None, orientation_mode = None, angle = None):
     if angle is not None:
         angle = math.pi/2-angle
         rotate = np.array([[1,0,0],
