@@ -75,6 +75,7 @@ def navigate(pose_x, pose_y, pose_theta, goal, navState):
         if alpha < -0.01:
             return 2*speed, 0.5*speed, 4
         else:
+
             return 0,0,5
         
     else:
@@ -131,4 +132,5 @@ def docking(goal, pose_x, pose_y, pose_theta, vL, vR, mode):
 
         # rotate robot to pose_theta = pi
         pass
+
     
