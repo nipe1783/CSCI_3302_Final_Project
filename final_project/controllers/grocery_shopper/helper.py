@@ -1,3 +1,5 @@
+import math
+
 def delay(time, state, new_state, counter):
     '''
     helper function to make robot pause for certain amount of time
@@ -25,10 +27,17 @@ def near(point, point_list):
     return False
 
 def same_color(color1, color2):
-    color1[0] = color1[0]*255
-    color1[1] = color1[1]*255
-    color1[2] = color1[2]*255
-    if (color1[0] == color2[0] and color1[1] == color2[1] and color1[2] == color2[2]):
+    if (color1[0]*255 == color2[0] and color1[1]*255 == color2[1] and color1[2]*255 == color2[2]):
         return True
     else:
         return False
+    
+def find_nearest_goal(pose_x,pose_y,goals):
+    min_distance = float('inf')
+    nearest_goal = None
+    for i, goal in enumerate(goals):
+        goal_dist = math.dist((pose_x, pose_y), goal[0:2])
+        if goal_dist < min_distance:
+            min_distance = goal_dist
+            nearest_goal = i
+    return goals.pop(nearest_goal)
