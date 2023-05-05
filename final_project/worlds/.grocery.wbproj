@@ -9,5 +9,5 @@ orthographicViewHeight: 1
 textFiles: -1
 globalOptionalRendering: CoordinateSystem::PenPaintingRays::LightSensorRays::LidarRaysPaths
 consoles: Console:All:All
-renderingDevicePerspectives: TIAGo Steel:camera;1;1.69583;0;0.407359
+renderingDevicePerspectives: TIAGo Steel:camera;1;1.06188;0.665559;0
 renderingDevicePerspectives: TIAGo Steel:display;1;0.550363;0.0366204;0.0262815

@@ -451,9 +451,9 @@ while robot.step(timestep) != -1:
 
         elif state == "setArmToReady":
             goal_point, goal_orientation, position_on_camera = goal_locate(camera)
-            angle = (123-position_on_camera[0])/120.
+            angle = (123-position_on_camera[0])/120
             goal_point[0] += .07
-            goal_point[1] += 0.04
+            goal_point[1] += 0.055
             if goal_shelf == "top":
                 goal_point[2] = 1.04
             elif goal_shelf == "middle":
@@ -466,7 +466,6 @@ while robot.step(timestep) != -1:
             state = "movingArmToReady"
 
         elif state == "movingArmToReady":
-            wrist_joint = robot_parts["arm_7_joint"]
             if counter % 10 == 0:
                 if len(arm_queue) > int(counter/10):
                     robot_parts = manipulate_to(arm_queue[int(counter/10)], robot_parts)
