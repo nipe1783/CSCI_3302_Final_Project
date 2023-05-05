@@ -29,6 +29,17 @@ class Node:
         waypoints.append(node.point)
         waypoints.reverse()
         return waypoints
+    def getAllPointsInPath(self):
+        node = self
+        waypoints = []
+        while node.parent is not None:
+            waypoints.append(node.point)
+            for x in node.path_from_parent:
+                waypoints.append(x)
+            node = node.parent
+        waypoints.append(node.point)
+        waypoints.reverse()
+        return waypoints
         
 
 def get_random_valid_vertex(state_is_valid, bounds):

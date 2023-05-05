@@ -59,12 +59,12 @@ def goal_detect(camera, pose_x, pose_y, pose_theta, goal_queue):
             wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
             wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
             wz = pose[2]
-            # goal = [wx, wy, wz]
-            goal = [wx, wy]
+            goal = [wx, wy, wz]
             goalNew = True
             for gl in goal_queue:
                 if(math.dist(goal, gl)):
                     goalNew = False
+                    break
             if goalNew:
                 goal_queue.append(goal)
     if len(filtered_contours) > 0:
