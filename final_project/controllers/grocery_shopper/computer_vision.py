@@ -75,7 +75,8 @@ def goal_locate(camera):
         if (same_color(color, yellow)):
             position_rg = object.getPosition()
             orientation_rg = object.getOrientation()
-            return [position_rg[0], position_rg[1], position_rg[2]], [orientation_rg[0], orientation_rg[1], orientation_rg[2]]
+            position_on_camera = object.getPositionOnImage()
+            return [position_rg[0], position_rg[1], position_rg[2]], [orientation_rg[0], orientation_rg[1], orientation_rg[2]], [position_on_camera[0], position_on_camera[1]]
         
 def add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue):
     yellow = [255.0, 255.0, 0.0]
