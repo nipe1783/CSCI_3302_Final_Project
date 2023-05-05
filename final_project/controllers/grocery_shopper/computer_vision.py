@@ -19,7 +19,7 @@ params.filterByColor = False
 
 detector = cv2.SimpleBlobDetector_create(params)
 
-def goal_detect(camera, pose_x, pose_y, pose_theta, goal_queue):
+def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
 
     '''
     detects yellow blob on camera. returns location of blob on image and if there is a blob detected.
@@ -48,7 +48,11 @@ def goal_detect(camera, pose_x, pose_y, pose_theta, goal_queue):
                 pose = object.getPosition()
                 wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
                 wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
-                wz = pose[2]
+                wz = height+pose[2]
+                if wz < 0.7:
+                    wz = 0.575
+                else:
+                    wz = 1.075
                 goal = [wx, wy, wz]
                 goalNew = True
                 for gl in goal_queue:
@@ -57,11 +61,11 @@ def goal_detect(camera, pose_x, pose_y, pose_theta, goal_queue):
                         break
                 if goalNew:
                     goal_queue.append(goal)
-    if blobs:
-        blob = blobs[0]
-        return blob.pt[0], blob.pt[1], goal_queue
+    if recObjects:
+        recObject = recObjects[0]
+        return recObject.getPosition(), goal_queue
     else:
-        return -1, -1, goal_queue
+        return (), goal_queue
     
 # def add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue):
 #     yellow = [255.0, 255.0, 0.0]

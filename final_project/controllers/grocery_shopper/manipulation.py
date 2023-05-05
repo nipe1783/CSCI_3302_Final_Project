@@ -49,3 +49,9 @@ def ik_arm(target_position, initial, target_orientation=None, orientation_mode =
         return my_chain.inverse_kinematics(target_position,target_orientation=target_orientation, orientation_mode=orientation_mode , initial_position=initial)
     else:
         return my_chain.inverse_kinematics(target_position, initial_position=initial)
+    
+def get_position_and_angle(pose_arm):
+    'returns position of arm and angle as rotation matrix'
+    frame = my_chain.forward_kinematics(pose_arm)
+    pose = frame[:3, 3]
+    return pose, frame[:3, :3]
