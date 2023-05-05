@@ -148,6 +148,9 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 # Main Loop
 goal_point = ()
 
+# arm_joints = ik_arm([0.1, -0.2, 1+torso_enc.getValue()], arm_joints)
+# robot_parts = manipulate_to(arm_joints, robot_parts)
+
 while robot.step(timestep) != -1:
 
     # print(state)
@@ -428,11 +431,7 @@ while robot.step(timestep) != -1:
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            counter, state = delay(40, state, "lift", counter)   
-
-        elif state == "lift":
-            robot_parts = manipulate_to(ik_arm([0.9, -0.05, 0.82 + arm_joints[2] ], arm_joints), robot_parts)
-            state = "backOut"
+            counter, state = delay(40, state, "backOut", counter)   
 
         elif state == "backOut":
             vL= -MAX_SPEED/2
@@ -480,7 +479,7 @@ while robot.step(timestep) != -1:
 
         elif state == "stowArm":
 
-            robot_parts = manipulate_to(ik_arm([0.0, -0.2, 1.6], arm_joints), robot_parts)
+            robot_parts = manipulate_to(ik_arm([0.1, -0.2, 1.1+torso_enc.getValue()], arm_joints), robot_parts)
             state = "exploration"
     
     # Odometer coardinates:
