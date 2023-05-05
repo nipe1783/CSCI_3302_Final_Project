@@ -41,7 +41,7 @@ def position_gps(gps, compass, world_height, world_width):
 
     return pose_x, pose_y, pose_theta
 
-def navigate(pose_x, pose_y, pose_theta, goal, navState):
+def navigate(pose_x, pose_y, pose_theta, goal, AXLE_LENGTH, navState):
     rho = math.dist((pose_x, pose_y), goal)
     alpha = (2 * math.pi + math.atan2(goal[1] - pose_y, goal[0] - pose_x) - pose_theta) % (2 * math.pi)
     if alpha > math.pi:

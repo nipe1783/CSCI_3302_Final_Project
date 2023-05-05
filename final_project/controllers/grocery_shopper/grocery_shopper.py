@@ -10,11 +10,11 @@ from scipy.signal import convolve2d
 from matplotlib import pyplot as plt
 import cv2
 from mapping import obstacle_detected_roam
-from computer_vision import goal_detect
+from computer_vision import goal_detect, goal_locate
 from planning import rrt_star, visualize_path
 from localization import position_gps, navigate
 from manipulation import manipulate_to, ik_arm
-from helper import delay
+from helper import delay, find_nearest_goal
 #Initialization
 print("=== Initializing Grocery Shopper...")
 #Consts
@@ -94,7 +94,7 @@ keyboard.enable(timestep)
 # Environment dimesnions:
 # Width: 16.1 m
 # Height: 30 m
-# Origin is in top left of the room.
+# Origin is in bottom right of the room.
 
 world_width = 16.1 - 1.5
 world_height = 30 - 1.5
@@ -110,6 +110,20 @@ vR = 0
 lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
+[1.6668519798569494, -0.20284982283080194, -0.18583268587895996]
+item0 = [2.6202858632038093, 3.58914, 0.5748653025126261]
+item1 = [11.547000914636712, -8.505688675100652, 0.03486531467979112]
+item2 = [-1.3296063450130449, -4.05309, 0.5748653625599697]
+item3 = [2.3409306731047352, -3.53294, 0.5748654067999813]
+item4 = [-0.8647696076431266, 0.3606378757006146, 0.5748653700715028]
+item5 = [-2.773024136796192, 0.3100000000000003, 0.5748653025126261]
+item6 = [0.7772010699377632, 0.3700000000000001, 0.5748652878199019]
+item7 = [-2.6650533601864694, 0.2, 1.0748653705132794]
+item8 = [-3.26060345214566, 3.629999999999986, 1.0748653543083286]
+item9 = [5.67997938546148, 7.16031, 1.0748654067999996]
+item10 = [3.504540887533399, 3.58914, 1.074864218478985]
+item11 = [3.4994646114633245, 7.16914, 1.07486535924194]
+goal_list = [item0, item1, item2, item3, item4, item5, item6, item7, item8, item9, item10, item11]
 
 # queue that stores list of goal x,y,z locations
 goal_queue = []
@@ -121,7 +135,6 @@ mode = "autonomous"
 # state = "openGripper"
 state = "start"
 counter = 0
-navState = 0
 
 map_width = int(360 * (world_width/ world_height))
 map_height = 360
@@ -130,21 +143,29 @@ world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
 map = np.zeros(shape=[map_height,map_width])
-seen = np.ones(shape=[map_height,map_width], dtype='uint8')
+seen = np.zeros(shape=[map_height,map_width], dtype='uint8')
 
 heights = [0.575, 1.075]
-arm_joints =  [0, 0, 0.35, 0,  0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 0, 0]
-arm_queue = []
 
-width = 20 # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
+arm_joints =  [0, 0, 0.35, 0,  0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 0, 0]
+
+arm_queue = []
+# curr_pose = my_chain.forward_kinematics([1] * 13)
+# target_orientation = [0.5, -0.5, 2.0]
+# target_position = [curr_pose[0][3], curr_pose[1][3], curr_pose[2][3]]
+
+width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
 robot_space = np.ones(shape=[width,width])
 waypoints = []
 threshold = 0.3 # we can change this value for tuning of what is considered an obstacle.\
 
+# angle = -1
 # Main Loop
 
 while robot.step(timestep) != -1:
-    lidar_sensor_readings = lidar.getRangeImage()
+
+    # print(state)
+
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     gx, gy, goal_queue = goal_detect(camera, pose_x, pose_y, pose_theta, goal_queue)
@@ -152,18 +173,17 @@ while robot.step(timestep) != -1:
         if state == "start":
             counter, state = delay(10, state, "exploration", counter)
         if state == "exploration":
-
             if goal_queue:
                 # goal_queue has some goals in it. Robot navigates to them.
 
-                goal_location = goal_queue[0]
+                goal_location = find_nearest_goal(pose_x, pose_y, goal_queue)
                 goal_z = goal_location[2]
                 goal_xy = goal_location[0:2]
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: math.dist(point, goal_xy) < 1.5
+                goal_check = lambda point: math.dist(point, goal_xy) < 1
                 bounds = np.array([[0, world_height],[0, world_width]])
-                node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), goal_xy, 500, 0.5, state_is_goal=goal_check)
+                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.2, state_is_goal=goal_check)[-1].getPath()
                 if pathFound: 
                     waypoints = node_list[-1].getPath()
                     visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
@@ -192,125 +212,154 @@ while robot.step(timestep) != -1:
                     counter = 0
 
         elif state == "navigation":
-            if counter >= len(waypoints):
-                state = "orient"
-                counter = 0
-                waypoints = []
-                state = "theta-docking"
-                counter = 0
-                continue
-            elif math.dist((pose_x, pose_y), waypoints[counter]) < 0.4:
-                counter += 1
-                navState = 0
-            else:
-                vL, vR, navState = navigate(pose_x, pose_y, pose_theta, waypoints[counter], navState)
+            # UNCOMMENT THIS WHEN RRT IS READY
+            # if counter >= len(waypoints):
+            #     state = "theta-docking"
+            #     counter = 0
+            #     continue
+            # if math.dist((pose_x, pose_y), waypoints[counter]) < 0.5:
+            #     counter += 1
+            # else:
+            #     vL, vR = navigate(pose_x, pose_y, pose_theta, waypoints[counter], AXLE_LENGTH, MAX_SPEED)
+            state = "theta-docking"
+            counter = 0
 
         elif state == "theta-docking":
 
             buffer = 0.01
-            if pose_theta > ( math.pi + buffer) and pose_theta < (3/2 * math.pi) :
-                # rotate robot to pose_theta = pi
-                vL = MAX_SPEED/10
-                vR = -MAX_SPEED/10
-            elif pose_theta > (3/2 * math.pi + buffer) and pose_theta < (2 * math.pi):
-                # rotate robot to pose_theta = 2 pi
-                vL = -MAX_SPEED/10
-                vR = MAX_SPEED/10
-            elif pose_theta > ( math.pi/2 + buffer) and pose_theta < math.pi:
-                # rotate robot to pose_theta = pi
-                vL = -MAX_SPEED/10
-                vR = MAX_SPEED/10
-            elif pose_theta > ( buffer) and pose_theta < (math.pi / 2):
-                # rotate robot to pose_theta = pi
-                vL = MAX_SPEED/10
-                vR = -MAX_SPEED/10
-            else:
-                vL = 0
-                vR = 0
-                counter, state = delay(50, state, "x-docking", counter)
-        elif state == "x-docking":
             if pose_x > goal_xy[0] + buffer:
-                # move forward until goal.x == pose_x
-                if pose_theta > ( math.pi + buffer):
-                    # turn right
-                    vL = MAX_SPEED/5
-                    vR = MAX_SPEED/10
-                elif pose_theta < ( math.pi + buffer):
-                    # turn left
+                if pose_theta > (math.pi + buffer):
+                    # rotate robot to pose_theta = pi
                     vL = MAX_SPEED/10
-                    vR = MAX_SPEED/5
-                else:
-                    # move forward
-                    vL = MAX_SPEED/5
-                    vR = MAX_SPEED/5
-            elif pose_x < goal_xy[0] - buffer:
-                # move backwards until goal.x == pose_x
-                if pose_theta > ( math.pi + buffer):
-                    # turn right
-                    vL = -MAX_SPEED/15
                     vR = -MAX_SPEED/10
-                elif pose_theta < ( math.pi + buffer):
-                    # turn left
+                elif pose_theta < (math.pi - buffer):
+                    # rotate robot to pose_theta = pi
                     vL = -MAX_SPEED/10
-                    vR = -MAX_SPEED/15
+                    vR = MAX_SPEED/10
                 else:
-                    # move backwards
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "height-docking", counter)
+            elif pose_x < goal_xy[0] - buffer: 
+                if pose_theta < (2*math.pi) and pose_theta > math.pi:
+                    # rotate robot to pose_theta = 2pi
                     vL = -MAX_SPEED/10
+                    vR = MAX_SPEED/10
+                elif pose_theta > buffer and pose_theta < math.pi:
+                    # rotate robot to pose_theta = 2pi
+                    vL = MAX_SPEED/10
                     vR = -MAX_SPEED/10
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "height-docking", counter)
+            else:   
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "re-theta-docking", counter)
+                
+
+        elif state == "height-docking":
+            torso_position = robot_parts["torso_lift_joint"].getTargetPosition()
+            if goal_z > -.45:
+                # goal is on top shelf
+                goal_shelf = "top"
+                if torso_position < 0.35:
+                    robot_parts["torso_lift_joint"].setPosition(torso_position + 0.01)
+                else:
+                    state = "x-docking"
             else:
-                vL = 0
-                vR = 0
-                counter, state = delay(50, state, "re-theta-docking", counter)
+                # goal is on middle shelf
+                goal_shelf = "middle"
+                if torso_position > 0:
+                    robot_parts["torso_lift_joint"].setPosition(torso_position - 0.01)
+                else:
+                    state = "x-docking"
+
+        elif state == "x-docking":
+            if pose_theta > (math.pi - math.pi/8) and pose_theta < (math.pi + math.pi/8):
+                # robot is facing in -x direction.
+                if pose_x > goal_xy[0] + buffer:
+                    # move forward until goal.x == pose_x
+                    if pose_theta > ( math.pi + buffer):
+                        # turn right
+                        vL = MAX_SPEED/5
+                        vR = MAX_SPEED/10
+                    elif pose_theta < ( math.pi + buffer):
+                        # turn left
+                        vL = MAX_SPEED/10
+                        vR = MAX_SPEED/5
+                    else:
+                        # move forward
+                        vL = MAX_SPEED/5
+                        vR = MAX_SPEED/5
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "re-theta-docking", counter)
+            elif pose_theta > (2*math.pi - math.pi/8) or (pose_theta < math.pi/8):
+                # robot is facing in +x direction.
+                if pose_x < goal_xy[0] - buffer:
+                    # move forward until goal.x == pose_x
+                    if pose_theta < (buffer):
+                        # turn right
+                        vL = MAX_SPEED/5
+                        vR = MAX_SPEED/10
+                    elif pose_theta > ( 2*math.pi - buffer):
+                        # turn left
+                        vL = MAX_SPEED/10
+                        vR = MAX_SPEED/5
+                    else:
+                        # move forward
+                        vL = MAX_SPEED/5
+                        vR = MAX_SPEED/5
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "re-theta-docking", counter)
+            else:
+                state = "theta-docking"
         elif state == "re-theta-docking":
             buffer = 0.01
             if pose_y < goal_xy[1]:
                 # robot needs to rotate to pi/2
                 if pose_theta > (math.pi/2 + buffer) :
-                    # vel = (pose_theta/ (math.pi/2)** 5)  * MAX_SPEED * .05
-                    # # rotate robot clockwise
-                    # vL = vel
-                    # vR = -vel
+                    # rotate robot clockwise         
                     vL = MAX_SPEED/10
                     vR = -MAX_SPEED/10
                 elif pose_theta < (math.pi/2 - buffer):
-                    # vel = ((math.pi/2) / pose_theta ** 5)  * MAX_SPEED * .05
-                    # # rotate robot ccw
-                    # vL = -vel
-                    # vR = vel
+                    # rotate robot ccw
                     vL = -MAX_SPEED/10
                     vR = MAX_SPEED/10
                 else:
                     vL = 0
                     vR = 0
+                    goal_theta = math.pi/2
                     counter, state = delay(50, state, "orient-docking", counter)
             else:
                 # robot needs to rotate to 3pi/2
                 if pose_theta < (3*math.pi/2 - buffer) :
-                    # vel = (pose_theta/ (math.pi/2)** 5)  * MAX_SPEED * .05
                     # # rotate robot clockwise
-                    # vL = vel
-                    # vR = -vel
                     vL = -MAX_SPEED/10
                     vR = MAX_SPEED/10
                 elif pose_theta > (3*math.pi/2 + buffer):
-                    # vel = ((math.pi/2) / pose_theta ** 5)  * MAX_SPEED * .05
-                    # # rotate robot ccw
-                    # vL = -vel
-                    # vR = vel
+                    # rotate robot ccw
                     vL = MAX_SPEED/10
                     vR = -MAX_SPEED/10
                 else:
                     vL = 0
                     vR = 0
+                    goal_theta = math.pi * 3/2
                     counter, state = delay(50, state, "orient-docking", counter)
 
         elif state == "orient-docking":
-            if gx == -1 and gy == -1:
+            if gx == -1 and gy == -1 and lidar.getRangeImage()[333] > 1:
+                vL = MAX_SPEED/20
+                vR = MAX_SPEED/20
+            elif gx == -1 and gy == -1:
                 counter, state = delay(20, state, "exploration", counter)
                 continue
-            else:
-                counter = 0
-            if gx < 110:
+            elif gx < 110:
                 # robot rotate left
                 vL = -MAX_SPEED/10
                 vR = MAX_SPEED/20
@@ -322,34 +371,45 @@ while robot.step(timestep) != -1:
                 # go forward
                 vL = 0
                 vR = 0
-                state = "height-docking"
-
-        elif state == "height-docking":
-            position = robot_parts["torso_lift_joint"].getTargetPosition()
-            print(position, goal_z)
-            if goal_z > -.25:
-                # goal is on top shelf
-                if position < 0.35:
-                    robot_parts["torso_lift_joint"].setPosition(position + 0.01)
-                else:
-                    state = "approach"
-            else:
-                # goal is on middle shelf
-                if position > 0:
-                    robot_parts["torso_lift_joint"].setPosition(position - 0.01)
-                else:
-                    state = "approach"
+                state = "approach"
 
         elif state == "approach":
-            if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
+            error_x = goal_xy[0] - pose_x
+            if not (error_x > -.02 and error_x < 0.02):
                 state = "orient-docking"
-            if lidar_sensor_readings[333] > 1:
+            if lidar.getRangeImage()[333] > 1:
                 vL = MAX_SPEED/5
                 vR = MAX_SPEED/5
             else:
                 vL = 0
                 vR = 0
-                state = "stabilize"
+                state = "theta-final"
+
+        elif state == "theta-final":
+            if pose_y > goal_xy[1]:
+                # rotate robot to 3pi/2
+                if pose_theta > 3*math.pi/2 + buffer:
+                    vL = MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+                elif pose_theta < 3*math.pi/2 - buffer:
+                    vL = -MAX_SPEED/10
+                    vR = MAX_SPEED/10
+                else:
+                    vL = 0
+                    vR = 0
+                    state = "stabilize"
+            else:
+                # rotate robot to 3pi/2
+                if pose_theta > math.pi/2 + buffer:
+                    vL = MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+                elif pose_theta < math.pi/2 - buffer:
+                    vL = -MAX_SPEED/10
+                    vR = MAX_SPEED/10
+                else:
+                    vL = 0
+                    vR = 0
+                    state = "stabilize"
         elif state == "stabilize":
             counter, state = delay(30, state, "openGripper", counter)
 
@@ -361,11 +421,18 @@ while robot.step(timestep) != -1:
 
         elif state == "setArmToReady":
             angle = (123-gx)/120.
-            print(angle)
+            goal_point, goal_orientation = goal_locate(camera)
+            goal_point[0] += .07
+            goal_point[1] += .05
+            if goal_shelf == "top":
+                goal_point[2] = 1.04
+            elif goal_shelf == "middle":
+                goal_point[2] = 0.9
+            position = robot_parts["arm_6_joint"].getTargetPosition()
             arm_queue = []
-            points = np.linspace([0.2*math.cos(angle), 0.2*math.sin(angle), 0.7 + arm_joints[2]], [math.cos(angle), math.sin(angle), 0.7 + arm_joints[2]], 15)
+            points = np.linspace([0,0,1.05], goal_point)
             for i in points:
-                arm_queue.append(ik_arm(i, arm_joints, angle=angle))
+                arm_queue.append(ik_arm(i,  arm_joints, angle=angle))
             state = "movingArmToReady"
 
         elif state == "movingArmToReady":
@@ -391,83 +458,64 @@ while robot.step(timestep) != -1:
         elif state == "backOut":
             vL= -MAX_SPEED/2
             vR= -MAX_SPEED/2
-            counter, state = delay(100, state, "setArmToBasket", counter)
+            counter, state = delay(100, state, "restore-height", counter)
 
+        elif state == "restore-height":
+            torso_position = robot_parts["torso_lift_joint"].getTargetPosition()
+            if torso_position < 0.35:
+                robot_parts["torso_lift_joint"].setPosition(torso_position + .01)
+            vL = 0
+            vR = 0
+            counter, state = delay(100, state, "setArmToBasket", counter)
         elif state == "setArmToBasket":
             vL = 0
             vR = 0
             basket = ik_arm([0.25, 0.05, 0.4 + arm_joints[2] ], arm_joints)
-            arm_queue = np.linspace(arm_joints, basket, 20)
+            arm_queue = np.linspace(arm_joints, basket, 30)
+            # Fixing arm_joint_7 angle:
+            part_1 = list(np.linspace(arm_queue[0][10], 2, 7))
+            part_2 = list(np.linspace(0, -1, 8))
+            part_3 = list(np.linspace(0, 0, 7))
+            part_4 = list(np.linspace(0, -2, 8))
+            arm_joint_7_points = np.array(part_1 + part_2 + part_3 + part_4)
+            for i, queue in enumerate(arm_queue):
+                queue[10] = arm_joint_7_points[i]
             state = "movingArmToBasket"
 
         elif state == "movingArmToBasket":
-            if counter % 5 == 0:
-                if len(arm_queue) > int(counter/5):
-                    robot_parts = manipulate_to(arm_queue[int(counter/5)], robot_parts)
+            if counter % 10 == 0:
+                if len(arm_queue) > int(counter/10):
+                    robot_parts = manipulate_to(arm_queue[int(counter/10)], robot_parts)
+                    arm_7_position = robot_parts["arm_7_joint"].getTargetPosition()               
                 else:
                     state = "releaseObject"
+                    vL = 0
+                    vR = 0
                     counter = -1
             counter += 1
 
         elif state == "releaseObject":
             robot_parts["gripper_left_finger_joint"].setPosition(0.045)
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
-            counter, state = delay(20, state, "stowArm", counter)
+            robot_parts["arm_7_joint"].setPosition(0)
+            counter, state = delay(100, state, "stowArm", counter)
 
         elif state == "stowArm":
-            goal_queue.pop(0)
+
             robot_parts = manipulate_to(ik_arm([0.0, -0.2, 1.6], arm_joints), robot_parts)
             state = "exploration"
-
-    # Manual mode used for testing purposes only
-    elif mode == "manual":
-        key = keyboard.getKey()
-        if key == keyboard.LEFT :
-            vL = -MAX_SPEED
-            vR = MAX_SPEED
-        elif key == keyboard.RIGHT:
-            vL = MAX_SPEED
-            vR = -MAX_SPEED
-        elif key == keyboard.UP:
-            vL = MAX_SPEED
-            vR = MAX_SPEED
-        elif key == keyboard.DOWN:
-            vL = -MAX_SPEED
-            vR = -MAX_SPEED
-        elif key == ord(' '):
-            vL = 0
-            vR = 0
-        elif key == ord('I'):
-            print("captured image")
-            cv2.imwrite("tests/camera_img" + str(counter) + ".png", np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4)))
-            counter += 1
-        elif key == ord('C'):
-            # Part 1.4: Filter map and save to filesystem
-            np.save("tests/cspace.npy", convolve2d((map>=threshold).astype(np.uint8), robot_space, mode = "same") >= 1)
-            print("Configuration space file saved")
-        elif key == ord('M'):
-            # Part 1.4: Filter map and save to filesystem
-            np.save("tests/map.npy",(map>=threshold).astype(np.uint8))
-            print("Configuration space file saved")
-        elif key == ord('S'):
-            # Part 1.4: Filter map and save to filesystem
-            np.save("tests/seen.npy", seen)
-            print("Known space file saved")
-        else:
-            vL *= 0.75
-            vR *= 0.75
-
-
+    
     # Odometer coardinates:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
 
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i, counter: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy, counter))
+    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     
     # --------------
     # Lidar Mapping:
     # --------------
     
+    lidar_sensor_readings = lidar.getRangeImage()
     lidar_sensor_readings = lidar_sensor_readings[83:len(lidar_sensor_readings)-83]
 
     # This is to improve efficiency
@@ -503,9 +551,9 @@ while robot.step(timestep) != -1:
 
                 mx = int(wx * world_to_map_height)
                 my = int(wy * world_to_map_width)
-                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 0, 2)
-                # display.setColor(int(0x777777))
-                # display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
+                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 1)
+                display.setColor(int(0x777777))
+                display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
         else:
 
             rx = math.cos(alpha)*rho
@@ -529,17 +577,16 @@ while robot.step(timestep) != -1:
             if map[mx, my] < 1:
                 map[mx, my] += 0.005
             if (92 < i and i < number_of_readings-92):
-                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 2)
-                # display.setColor(int(0x777777))
-                # display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
+                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 1)
+                display.setColor(int(0x777777))
+                display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
             g = int(map[mx, my] * 255)
             display.setColor(g)
             display.drawPixel(my + 50,mx)
 
     display.setColor(int(0xFFFFFF))
     display.drawPixel(robot_Y_map + 50,robot_X_map)
-
-
+    
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
     

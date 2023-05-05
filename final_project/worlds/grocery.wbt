@@ -18,8 +18,10 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2022b/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.020808250416867347 -0.9974694231891894 0.06798357534886508 5.687902171238918
-  position -17.88162597868509 0.09624639306693239 13.2857444526246
+  orientation -0.11885308545171522 0.9267580581601487 0.35636139762022145 0.6909244416260043
+  position -23.124540357696745 -3.9376368722596196 16.473307586998562
+  follow "floor"
+  followType "Mounted Shot"
 }
 TexturedBackground {
   texture "empty_office"
@@ -1077,8 +1079,8 @@ DEF beer_bottles Transform {
   ]
 }
 TiagoSteel {
-  translation -4.999458318100831 -9.056452039376476e-05 0.0882377293080783
-  rotation 0.48134709376506196 0.8763253227003475 -0.018944764924922582 0.0219016264587718
+  translation -5.36187 0.0533267 0.0882377
+  rotation -0.48134801618161854 -0.8763270294597447 0.018842100633420466 -0.021905307179586053
   controller "grocery_shopper"
   cameraSlot [
     Camera {
@@ -1181,7 +1183,7 @@ TiagoSteel {
     GPS {
     }
     HokuyoUrg04lxug01 {
-      translation 0 0 0.5
+      translation 0.1 0 0.2
     }
   ]
 }
