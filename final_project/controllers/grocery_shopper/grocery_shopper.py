@@ -259,26 +259,73 @@ while robot.step(timestep) != -1:
         elif state == "theta-docking":
 
             buffer = 0.01
-            if pose_theta > ( math.pi + buffer) and pose_theta < (3/2 * math.pi) :
-                # rotate robot to pose_theta = pi
-                vL = MAX_SPEED/10
-                vR = -MAX_SPEED/10
-            elif pose_theta > (3/2 * math.pi + buffer) and pose_theta < (2 * math.pi):
-                # rotate robot to pose_theta = 2 pi
-                vL = -MAX_SPEED/10
-                vR = MAX_SPEED/10
-            elif pose_theta > ( math.pi/2 + buffer) and pose_theta < math.pi:
-                # rotate robot to pose_theta = pi
-                vL = -MAX_SPEED/10
-                vR = MAX_SPEED/10
-            elif pose_theta > ( buffer) and pose_theta < (math.pi / 2):
-                # rotate robot to pose_theta = pi
-                vL = MAX_SPEED/10
-                vR = -MAX_SPEED/10
+            if pose_x > goal_xy[0]:
+                if pose_theta > (math.pi + buffer):
+                    # rotate robot to pose_theta = pi
+                    vL = MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+                elif pose_theta < (math.pi - buffer):
+                    # rotate robot to pose_theta = pi
+                    vL = -MAX_SPEED/10
+                    vR = MAX_SPEED/10
+                # if pose_theta > ( math.pi + buffer) and pose_theta < (3/2 * math.pi) :
+                #     print("1")
+                #     # rotate robot to pose_theta = pi
+                #     vL = MAX_SPEED/10
+                #     vR = -MAX_SPEED/10
+                # elif pose_theta > (3/2 * math.pi + buffer) and pose_theta < (math.pi):
+                #     print("2")
+                #     # rotate robot to pose_theta = pi
+                #     vL = MAX_SPEED/10
+                #     vR = -MAX_SPEED/10
+                # elif pose_theta > ( math.pi/2 + buffer) and pose_theta < math.pi:
+                #     print("3")
+                #     # rotate robot to pose_theta = pi
+                #     vL = -MAX_SPEED/10
+                #     vR = MAX_SPEED/10
+                # elif pose_theta > ( buffer) and pose_theta < (math.pi / 2):
+                #     print("4")
+                #     # rotate robot to pose_theta = pi
+                #     vL = MAX_SPEED/10
+                #     vR = -MAX_SPEED/10
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "height-docking", counter)
             else:
-                vL = 0
-                vR = 0
-                counter, state = delay(50, state, "height-docking", counter)
+                # if pose_theta > ( math.pi + buffer) and pose_theta < (3/2 * math.pi) :
+                #     print("1")
+                #     # rotate robot to pose_theta = pi
+                #     vL = MAX_SPEED/10
+                #     vR = -MAX_SPEED/10
+                # elif pose_theta > (3/2 * math.pi + buffer) and pose_theta < (2* math.pi):
+                #     print("2")
+                #     # rotate robot to pose_theta = pi
+                #     vL = -MAX_SPEED/10
+                #     vR = MAX_SPEED/10
+                # elif pose_theta > ( math.pi/2 + buffer) and pose_theta < math.pi:
+                #     print("3")
+                #     # rotate robot to pose_theta = pi
+                #     vL = -MAX_SPEED/10
+                #     vR = MAX_SPEED/10
+                # elif pose_theta > ( buffer) and pose_theta < (math.pi / 2):
+                #     print("4")
+                #     # rotate robot to pose_theta = pi
+                #     vL = MAX_SPEED/10
+                #     vR = -MAX_SPEED/10
+                if pose_theta < (2*math.pi) and pose_theta > math.pi:
+                    # rotate robot to pose_theta = pi
+                    vL = -MAX_SPEED/10
+                    vR = MAX_SPEED/10
+                elif pose_theta > buffer and pose_theta < math.pi:
+                    # rotate robot to pose_theta = pi
+                    vL = MAX_SPEED/10
+                    vR = -MAX_SPEED/10
+                else:
+                    vL = 0
+                    vR = 0
+                    counter, state = delay(50, state, "height-docking", counter)
+                
 
         elif state == "height-docking":
             torso_position = robot_parts["torso_lift_joint"].getTargetPosition()
@@ -298,7 +345,9 @@ while robot.step(timestep) != -1:
                     state = "x-docking"
 
         elif state == "x-docking":
+            print(pose_x, goal_xy[0])
             if pose_theta > (math.pi - math.pi/6) and pose_theta < (math.pi + math.pi/6):
+                print("test")
                 # robot is facing in -x direction.
                 if pose_x > goal_xy[0] + buffer:
                     # move forward until goal.x == pose_x
@@ -318,7 +367,8 @@ while robot.step(timestep) != -1:
                     vL = 0
                     vR = 0
                     counter, state = delay(50, state, "re-theta-docking", counter)
-            else:
+            elif pose_theta > (2*math.pi + buffer) or (pose_theta < buffer):
+                print("here")
                 # robot is facing in +x direction.
                 if pose_x < goal_xy[0] - buffer:
                     # move forward until goal.x == pose_x
@@ -338,6 +388,8 @@ while robot.step(timestep) != -1:
                     vL = 0
                     vR = 0
                     counter, state = delay(50, state, "re-theta-docking", counter)
+            else:
+                state = "theta-docking"
         elif state == "re-theta-docking":
             buffer = 0.01
             if pose_y < goal_xy[1]:
