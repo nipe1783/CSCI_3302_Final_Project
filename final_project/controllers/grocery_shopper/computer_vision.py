@@ -67,17 +67,17 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
     else:
         return (), goal_queue
     
-# def add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue):
-#     yellow = [255.0, 255.0, 0.0]
-#     for object in camera.getRecognitionObjects():
-#         color = object.getColors()
-#         if (same_color(color, yellow)):
-#             pose = object.getPosition()
-#             wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
-#             wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
-#             wz = pose[2]
-#             # goal = [wx, wy, wz]
-#             goal = [wx, wy]
-#             if(not near(goal, goal_queue)):
-#                 goal_queue.append(goal)
-#     return goal_queue
+def goal_locate(camera):
+    '''
+    returns position of goal relative to robot
+    '''
+    yellow = [255.0, 255.0, 0.0]
+    for object in camera.getRecognitionObjects():
+        color = object.getColors()
+        # print(color[0], color[1], color[2])
+        if (same_color(color, yellow)):
+            position_rg = object.getPosition()
+            orientation_rg = object.getOrientation()
+            position_on_camera = object.getPositionOnImage()
+            return [position_rg[0], position_rg[1], position_rg[2]], [orientation_rg[0], orientation_rg[1], orientation_rg[2]], [position_on_camera[0], position_on_camera[1]]
+        

@@ -405,6 +405,7 @@ while robot.step(timestep) != -1:
                 state = "setArmToReady"
 
         elif state == "setArmToReady":
+            goal_point, goal_orientation, position_on_camera = goal_locate(camera)
             angle = math.atan(goal_point[1]/goal_point[0])
             goal_point[0] += .07
             goal_point[1] += .05
@@ -561,8 +562,8 @@ while robot.step(timestep) != -1:
             display.setColor(g)
             display.drawPixel(my + 50,mx)
 
-    display.setColor(int(0xFFFFFF))
-    display.drawPixel(robot_Y_map + 50,robot_X_map)
+    # display.setColor(int(0xFFFFFF))
+    # display.drawPixel(robot_Y_map + 50,robot_X_map)
     
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
