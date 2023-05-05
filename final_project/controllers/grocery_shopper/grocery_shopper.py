@@ -6,18 +6,15 @@ from controller import Robot, Motor, Camera, RangeFinder, Lidar, Keyboard, Displ
 import math
 import numpy as np
 import copy
-import random
 from scipy.signal import convolve2d
 from matplotlib import pyplot as plt
 import ikpy
 import ikpy.chain
 import cv2
 import heapq
-
 from mapping import mode_manual, obstacle_detected_roam
-from computer_vision import goal_detect, goal_locate
-from planning import rrt_star, visualize_path
-
+from computer_vision import goal_detect, goal_locate, add_goal_state
+from planning import rrt_star
 from localization import position_gps, navigate
 from manipulation import manipulate_to, ik_arm
 from helper import delay
@@ -100,7 +97,7 @@ keyboard.enable(timestep)
 # Environment dimesnions:
 # Width: 16.1 m
 # Height: 30 m
-# Origin is in top left of the room.
+# Origin is in bottom right of the room.
 
 world_width = 16.1 - 1.5
 world_height = 30 - 1.5
@@ -116,6 +113,20 @@ vR = 0
 lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
+[1.6668519798569494, -0.20284982283080194, -0.18583268587895996]
+item0 = [2.6202858632038093, 3.58914, 0.5748653025126261]
+item1 = [11.547000914636712, -8.505688675100652, 0.03486531467979112]
+item2 = [-1.3296063450130449, -4.05309, 0.5748653625599697]
+item3 = [2.3409306731047352, -3.53294, 0.5748654067999813]
+item4 = [-0.8647696076431266, 0.3606378757006146, 0.5748653700715028]
+item5 = [-2.773024136796192, 0.3100000000000003, 0.5748653025126261]
+item6 = [0.7772010699377632, 0.3700000000000001, 0.5748652878199019]
+item7 = [-2.6650533601864694, 0.2, 1.0748653705132794]
+item8 = [-3.26060345214566, 3.629999999999986, 1.0748653543083286]
+item9 = [5.67997938546148, 7.16031, 1.0748654067999996]
+item10 = [3.504540887533399, 3.58914, 1.074864218478985]
+item11 = [3.4994646114633245, 7.16914, 1.07486535924194]
+goal_list = [item0, item1, item2, item3, item4, item5, item6, item7, item8, item9, item10, item11]
 
 # queue that stores list of goal x,y,z locations
 goal_queue = []
@@ -125,9 +136,8 @@ goal_queue = []
 # mode = "manual"
 mode = "autonomous"
 # state = "openGripper"
-state = "start"
+state = "exploration"
 counter = 0
-navState = 0
 
 map_width = int(360 * (world_width/ world_height))
 map_height = 360
@@ -136,83 +146,121 @@ world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
 map = np.zeros(shape=[map_height,map_width])
-seen = np.ones(shape=[map_height,map_width], dtype='uint8')
+seen = np.zeros(shape=[map_height,map_width], dtype='uint8')
+
+for goal in goal_list:
+    goal[0] = world_height/2  - goal[0]
+    goal[1] = world_width/2 - goal[1] 
+    mx = abs(int(goal[0] * world_to_map_height))
+    my = abs(int(goal[1] * world_to_map_width))
+    display.setColor(int(0xFFFF00))
+    display.drawPixel(my + 50,mx)
 
 heights = [0.575, 1.075]
+active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False]
 arm_joints =  [0, 0, 0.35, 0,  0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 0, 0]
+my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_links)
 arm_queue = []
+# curr_pose = my_chain.forward_kinematics([1] * 13)
+# target_orientation = [0.5, -0.5, 2.0]
+# target_position = [curr_pose[0][3], curr_pose[1][3], curr_pose[2][3]]
 
-width = 20 # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
+width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
 robot_space = np.ones(shape=[width,width])
 waypoints = []
 threshold = 0.3 # we can change this value for tuning of what is considered an obstacle.\
 
+# angle = -1
 # Main Loop
 
 while robot.step(timestep) != -1:
 
-    lidar_sensor_readings = lidar.getRangeImage()
+    # print(state
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
-    gx, gy, goal_queue = goal_detect(camera, pose_x, pose_y, pose_theta, goal_queue)
-    if mode == "autonomous":
-        if state == "start":
-            counter, state = delay(10, state, "exploration", counter)
+    gx, gy, goal_detected = goal_detect(camera)
+    if mode == "manual":
+        mode_manual()
+
+    elif mode == "autonomous":
 
         if state == "exploration":
 
             if goal_queue:
                 # goal_queue has some goals in it. Robot navigates to them.
 
-                goal_location = goal_queue[0]
+                goal_location = goal_queue.pop(0)
                 goal_z = goal_location[2]
                 goal_xy = goal_location[0:2]
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: math.dist(point, goal_xy) < 1.5
+                goal_check = lambda point: math.dist(point, goal_xy) < 1
                 bounds = np.array([[0, world_height],[0, world_width]])
-                node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), goal_xy, 500, 0.5, state_is_goal=goal_check)
-                if pathFound: 
-                    waypoints = node_list[-1].getPath()
-                    visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
-                    state = "navigation"
-                    counter = 0
-            elif waypoints:
-                # path following to explore unseen space
-                if counter >= len(waypoints):
-                    counter = 0
-                    waypoints = []
-                elif math.dist((pose_x, pose_y), waypoints[counter]) < 0.4:
-                    counter+=1
-                else:
-                    vL, vR, navState = navigate(pose_x, pose_y, pose_theta, waypoints[counter])
+                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.2, state_is_goal=goal_check)[-1].getPath()
+                prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
+                for point in waypoints:
+                    point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
+                    cv2.line(configuration_space, prevPoint, point, 1, 1)
+                    prevPoint = point
+                state = "navigation"
+                counter = 0
+
             else:
-                # go to unexplored territory
-                configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
-                # configuration_space = np.add((convolve2d(seen, robot_space, mode = "same") < 1).astype(np.uint8), configuration_space)
-                validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: seen[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))]
-                bounds = np.array([[0, world_height],[0, world_width]])
-                node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), None, 200, 1, state_is_goal=goal_check)
-                if pathFound: 
-                    waypoints = node_list[-1].getPath()
-                    visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
-                    state = "navigation"
-                    counter = 0
+                # Function to randomly explore map until goal is detected.
+                turn_left, turn_right = obstacle_detected_roam(lidar)
+
+                if turn_left and turn_right:
+                    # Turn Left
+                    vL = -MAX_SPEED/7
+                    vR = MAX_SPEED/7
+                elif turn_left:
+                    # Turn Left
+                    vL = -MAX_SPEED/7
+                    vR = MAX_SPEED/7
+                elif turn_right:
+                    # Turn Right
+                    vL = MAX_SPEED/7
+                    vR = -MAX_SPEED/7
+                else:
+                    # Continue Forward
+                    vL = MAX_SPEED/1.3
+                    vR = MAX_SPEED/1.3
+
+                if(goal_detected):
+                    goal_queue = add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue)
+
+        elif state == "recalculate path":
+            configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
+            # plt.imshow(configuration_space)
+            # plt.show()
+
+            validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
+            goal_check = lambda point: seen[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
+
+            bounds = np.array([[0, world_height],[0, world_width]])
+            waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.5, state_is_goal=goal_check)[-1].getPath()
+            prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
+            for point in waypoints:
+                point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
+                cv2.line(configuration_space, prevPoint, point, 1, 1)
+                prevPoint = point
+            plt.imshow(configuration_space)
+            plt.show()
+            state = "navigation"
+            counter = 0
 
         elif state == "navigation":
-            if counter >= len(waypoints):
-                state = "orient"
-                counter = 0
-                waypoints = []
-                state = "theta-docking"
-                counter = 0
-                continue
-            elif math.dist((pose_x, pose_y), waypoints[counter]) < 0.4:
-                counter += 1
-                navState = 0
-            else:
-                vL, vR, navState = navigate(pose_x, pose_y, pose_theta, waypoints[counter], navState)
+            # UNCOMMENT THIS WHEN RRT IS READY
+            # if counter >= len(waypoints):
+            #     state = "theta-docking"
+            #     counter = 0
+            #     continue
+            # if math.dist((pose_x, pose_y), waypoints[counter]) < 0.5:
+            #     counter += 1
+            # else:
+            #     vL, vR = navigate(pose_x, pose_y, pose_theta, waypoints[counter], AXLE_LENGTH, MAX_SPEED)
+            state = "theta-docking"
+            counter = 0
 
         elif state == "theta-docking":
 
@@ -341,7 +389,7 @@ while robot.step(timestep) != -1:
         elif state == "approach":
             if (not (gx == -1 and gy == -1)) and (gx < 110 or gx > 130):
                 state = "orient-docking"
-            if lidar_sensor_readings[333] > 1:
+            if lidar.getRangeImage()[333] > 1:
                 vL = MAX_SPEED/5
                 vR = MAX_SPEED/5
             else:
@@ -370,7 +418,7 @@ while robot.step(timestep) != -1:
             arm_queue = []
             points = np.linspace([0,0,1.05], goal_point)
             for i in points:
-                arm_queue.append(ik_arm(i, arm_joints, angle=angle))
+                arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=angle))
             state = "movingArmToReady"
 
         elif state == "movingArmToReady":
@@ -390,7 +438,7 @@ while robot.step(timestep) != -1:
             counter, state = delay(40, state, "lift", counter)   
 
         elif state == "lift":
-            robot_parts = manipulate_to(ik_arm([0.9, -0.05, 0.82 + arm_joints[2] ], arm_joints), robot_parts)
+            robot_parts = manipulate_to(ik_arm([0.9, -0.05, 0.82 + arm_joints[2] ], my_chain, arm_joints), robot_parts)
             state = "backOut"
 
         elif state == "backOut":
@@ -440,59 +488,21 @@ while robot.step(timestep) != -1:
             counter, state = delay(30, state, "stowArm", counter)
 
         elif state == "stowArm":
-            goal_queue.pop(0)
-            robot_parts = manipulate_to(ik_arm([0.0, -0.2, 1.6], arm_joints), robot_parts)
+
+            robot_parts = manipulate_to(ik_arm([0.0, -0.2, 1.6], my_chain, arm_joints), robot_parts)
             state = "exploration"
-
-    # Manual mode used for testing purposes only
-    elif mode == "manual":
-        key = keyboard.getKey()
-        if key == keyboard.LEFT :
-            vL = -MAX_SPEED
-            vR = MAX_SPEED
-        elif key == keyboard.RIGHT:
-            vL = MAX_SPEED
-            vR = -MAX_SPEED
-        elif key == keyboard.UP:
-            vL = MAX_SPEED
-            vR = MAX_SPEED
-        elif key == keyboard.DOWN:
-            vL = -MAX_SPEED
-            vR = -MAX_SPEED
-        elif key == ord(' '):
-            vL = 0
-            vR = 0
-        elif key == ord('I'):
-            print("captured image")
-            cv2.imwrite("tests/camera_img" + str(counter) + ".png", np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4)))
-            counter += 1
-        elif key == ord('C'):
-            # Part 1.4: Filter map and save to filesystem
-            np.save("tests/cspace.npy", convolve2d((map>=threshold).astype(np.uint8), robot_space, mode = "same") >= 1)
-            print("Configuration space file saved")
-        elif key == ord('M'):
-            # Part 1.4: Filter map and save to filesystem
-            np.save("tests/map.npy",(map>=threshold).astype(np.uint8))
-            print("Configuration space file saved")
-        elif key == ord('S'):
-            # Part 1.4: Filter map and save to filesystem
-            np.save("tests/seen.npy", seen)
-            print("Known space file saved")
-        else:
-            vL *= 0.75
-            vR *= 0.75
-
-
+    
     # Odometer coardinates:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
 
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i, counter: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy, counter))
+    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f State: %s, gx: %i, gy: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, gx, gy))
     
     # --------------
     # Lidar Mapping:
     # --------------
     
+    lidar_sensor_readings = lidar.getRangeImage()
     lidar_sensor_readings = lidar_sensor_readings[83:len(lidar_sensor_readings)-83]
 
     # This is to improve efficiency
@@ -528,9 +538,9 @@ while robot.step(timestep) != -1:
 
                 mx = int(wx * world_to_map_height)
                 my = int(wy * world_to_map_width)
-                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 0, 2)
-                # display.setColor(int(0x777777))
-                # display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
+                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 1)
+                display.setColor(int(0x777777))
+                display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
         else:
 
             rx = math.cos(alpha)*rho
@@ -554,9 +564,9 @@ while robot.step(timestep) != -1:
             if map[mx, my] < 1:
                 map[mx, my] += 0.005
             if (92 < i and i < number_of_readings-92):
-                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 2)
-                # display.setColor(int(0x777777))
-                # display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
+                cv2.line(seen, (robot_Y_map, robot_X_map), (my, mx), 1, 1)
+                display.setColor(int(0x777777))
+                display.drawLine(robot_Y_map + 50, robot_X_map, my + 50, mx)
             g = int(map[mx, my] * 255)
             display.setColor(g)
             display.drawPixel(my + 50,mx)
