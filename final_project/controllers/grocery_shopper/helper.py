@@ -22,7 +22,7 @@ def near(point, point_list):
     returns True if the new point is within 0.1 of all x,y,z directions
     '''
     for p in point_list:
-        if abs(p[0] - point[0]) <= 0.1 and abs(p[1] - point[1]) <= 0.1 and abs(p[2] - point[2]) <= 0.1:
+        if abs(p[0] - point[0]) <= 0.2 and abs(p[1] - point[1]) <= 0.2 and abs(p[2] - point[2]) <= 0.2:
             return True
     return False
 
@@ -40,4 +40,4 @@ def find_nearest_goal(pose_x,pose_y,goals):
         if goal_dist < min_distance:
             min_distance = goal_dist
             nearest_goal = i
-    return goals.pop(nearest_goal)
+    return goals[nearest_goal], nearest_goal
