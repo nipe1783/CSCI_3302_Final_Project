@@ -66,13 +66,13 @@ def navigate(pose_x, pose_y, pose_theta, goal, navState):
             return 0,0,4
         
     elif navState == 3:
-        if alpha > 0:
+        if alpha > 0.01:
             return 0.5*speed, 2*speed, 3
         else:
             return 0,0,5
         
     elif navState == 4:
-        if alpha < 0:
+        if alpha < -0.01:
             return 2*speed, 0.5*speed, 4
         else:
             return 0,0,5
