@@ -453,7 +453,7 @@ while robot.step(timestep) != -1:
             goal_point, goal_orientation, position_on_camera = goal_locate(camera)
             angle = (123-position_on_camera[0])/120.
             goal_point[0] += .07
-            goal_point[1] += 0.05
+            goal_point[1] += 0.04
             if goal_shelf == "top":
                 goal_point[2] = 1.04
             elif goal_shelf == "middle":
