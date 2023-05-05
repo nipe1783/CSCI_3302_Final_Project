@@ -372,16 +372,19 @@ while robot.step(timestep) != -1:
                     counter, state = delay(50, state, "orient-docking", counter)
 
         elif state == "orient-docking":
-
-            error_x = goal_xy[0] - pose_x
-            if error_x < -.01:
-                # robot rotate right
-                vL = MAX_SPEED/8
-                vR = -MAX_SPEED/20
-            elif error_x > 0.01:
+            if gx == -1 and gy == -1:
+                counter, state = delay(20, state, "exploration", counter)
+                continue
+            else:
+                counter = 0
+            if gx < 110:
                 # robot rotate left
-                vL = -MAX_SPEED/20
-                vR = MAX_SPEED/8
+                vL = -MAX_SPEED/10
+                vR = MAX_SPEED/20
+            elif gx > 130:
+                # robot rotate right
+                vL = MAX_SPEED/20
+                vR = -MAX_SPEED/10
             else:
                 # go forward
                 vL = 0
