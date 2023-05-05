@@ -46,7 +46,7 @@ def navigate(pose_x, pose_y, pose_theta, goal):
     alpha = (2 * math.pi + math.atan2(goal[1] - pose_y, goal[0] - pose_x) - pose_theta) % (2 * math.pi)
     if alpha > math.pi:
         alpha = alpha - (2*math.pi)
-    print("Current xy: ", (pose_x,pose_y), "pose_theta: ", pose_theta, "goal: ", goal, "rho: ", rho, " alpha: ", alpha)
+    # print("Current xy: ", (pose_x,pose_y), "pose_theta: ", pose_theta, "goal: ", goal, "rho: ", rho, " alpha: ", alpha)
     dTheta = 10*alpha
     vL = rho - (dTheta*AXLE_LENGTH/2)
     vR = rho + (dTheta*AXLE_LENGTH/2)

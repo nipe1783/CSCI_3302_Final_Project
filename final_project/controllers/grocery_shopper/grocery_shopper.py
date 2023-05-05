@@ -405,7 +405,6 @@ while robot.step(timestep) != -1:
                 state = "setArmToReady"
 
         elif state == "setArmToReady":
-            goal_point, goal_orientation, position_on_camera = goal_locate(camera)
             angle = math.atan(goal_point[1]/goal_point[0])
             goal_point[0] += .07
             goal_point[1] += .05

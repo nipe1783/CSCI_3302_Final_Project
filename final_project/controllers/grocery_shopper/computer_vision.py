@@ -67,17 +67,3 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
     else:
         return (), goal_queue
     
-def goal_locate(camera):
-    '''
-    returns position of goal relative to robot
-    '''
-    yellow = [255.0, 255.0, 0.0]
-    for object in camera.getRecognitionObjects():
-        color = object.getColors()
-        # print(color[0], color[1], color[2])
-        if (same_color(color, yellow)):
-            position_rg = object.getPosition()
-            orientation_rg = object.getOrientation()
-            position_on_camera = object.getPositionOnImage()
-            return [position_rg[0], position_rg[1], position_rg[2]], [orientation_rg[0], orientation_rg[1], orientation_rg[2]], [position_on_camera[0], position_on_camera[1]]
-        
