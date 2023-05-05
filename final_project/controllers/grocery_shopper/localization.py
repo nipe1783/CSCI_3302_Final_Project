@@ -1,10 +1,23 @@
 import math
 
-def odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH):
+MAX_ERROR = 0.0001
+
+def odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH, gps, compass, world_height, world_width):
 
     pose_x += (vL+vR)/2/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0*math.cos(pose_theta)
     pose_y -= (vL+vR)/2/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0*math.sin(pose_theta)
     pose_theta += (vR-vL)/AXLE_LENGTH/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0
+
+    gps_x, gps_y, gps_theta = position_gps(gps, compass, world_height, world_width)
+    error_x = abs(pose_x - gps_x)
+    error_y = abs(pose_y - gps_y)
+    error_theta = abs(pose_theta - gps_theta)
+    total_error = error_x + error_y + error_theta
+    #print(total_error)
+    
+    # Reset the pose values to the GPS position if the error reaches threshold
+    if total_error > MAX_ERROR:
+        pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
 
     return pose_x, pose_y, pose_theta
 

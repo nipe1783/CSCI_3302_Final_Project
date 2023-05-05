@@ -15,7 +15,7 @@ import heapq
 from mapping import mode_manual, obstacle_detected_roam
 from computer_vision import goal_detect, goal_locate, add_goal_state
 from planning import rrt_star
-from localization import position_gps, navigate
+from localization import position_gps, navigate, odometer
 from manipulation import manipulate_to, ik_arm
 from helper import delay, find_nearest_goal
 #Initialization
@@ -170,8 +170,9 @@ while robot.step(timestep) != -1:
     # print(state)
 
     # GPS coardinates:
-    pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
+    pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH, gps, compass, world_height, world_width)
     gx, gy, goal_detected = goal_detect(camera)
+
     if mode == "manual":
         mode_manual()
 
