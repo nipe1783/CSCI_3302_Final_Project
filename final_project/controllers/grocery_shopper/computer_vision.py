@@ -78,7 +78,7 @@ def goal_locate(camera):
             position_on_camera = object.getPositionOnImage()
             return [position_rg[0], position_rg[1], position_rg[2]], [orientation_rg[0], orientation_rg[1], orientation_rg[2]], [position_on_camera[0], position_on_camera[1]]
         
-def add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue):
+def add_goal_state(camera, pose_x, pose_y, pose_z, pose_theta, goal_queue):
     yellow = [255.0, 255.0, 0.0]
     for object in camera.getRecognitionObjects():
         color = object.getColors()
@@ -86,7 +86,8 @@ def add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue):
             pose = object.getPosition()
             wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
             wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
-            wz = pose[2]
+            wz = pose_z+pose[2]
+            
             goal = [wx, wy, wz]
             if(not near(goal, goal_queue) and math.dist((pose_x,pose_y), goal[0:2]) < 5):
                 goal_queue.append(goal)

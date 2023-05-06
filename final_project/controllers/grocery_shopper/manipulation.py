@@ -1,5 +1,10 @@
 import math
 import numpy as np
+import ikpy
+import ikpy.chain
+
+active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False]
+my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_links)
 
 def manipulate_to(new_pose, robot_parts):
     """Use IK to calculate position and then deliver position to joints
@@ -24,7 +29,7 @@ def manipulate_to(new_pose, robot_parts):
     robot_parts["arm_6_joint"].setPosition(arm_joints[9])
     robot_parts["arm_7_joint"].setPosition(arm_joints[10])
 
-    return robot_parts
+    return robot_parts, arm_joints
 
 def ik_arm(target_position, my_chain, arm_joints, target_orientation=None, orientation_mode = None, initial = None, angle = None):
     if initial is None:
@@ -48,3 +53,9 @@ def ik_arm(target_position, my_chain, arm_joints, target_orientation=None, orien
         return my_chain.inverse_kinematics(target_position,target_orientation=target_orientation, orientation_mode=orientation_mode , initial_position=initial)
     else:
         return my_chain.inverse_kinematics(target_position, initial_position=initial)
+    
+def get_position(pose_arm):
+    'returns position of wrist in robot coa'
+    frame = my_chain.forward_kinematics(pose_arm)
+    pose = frame[:3, 3]
+    return pose
