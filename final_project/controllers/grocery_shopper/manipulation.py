@@ -29,7 +29,7 @@ def manipulate_to(new_pose, robot_parts):
     robot_parts["arm_6_joint"].setPosition(arm_joints[9])
     robot_parts["arm_7_joint"].setPosition(arm_joints[10])
 
-    return robot_parts, arm_joints
+    return robot_parts
 
 def ik_arm(target_position, my_chain, arm_joints, target_orientation=None, orientation_mode = None, initial = None, angle = None):
     if initial is None:

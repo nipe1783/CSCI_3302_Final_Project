@@ -154,8 +154,6 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 
 while robot.step(timestep) != -1:
 
-    print(state)
-
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     pose_z = 1.1+torso_enc.getValue()
@@ -448,77 +446,36 @@ while robot.step(timestep) != -1:
         elif state == "setArmToReady":
             goal_point, goal_orientation, position_on_camera = goal_locate(camera)
             angle = (123-position_on_camera[0])/120
-            goal_point[0] -= .07
+
+            goal_point[0] += .07
             goal_point[1] += 0.055
             if goal_shelf == "top":
                 goal_point[2] = 1.03
             elif goal_shelf == "middle":
-                goal_point[2] = 0.52
+                goal_point[2] = 0.53
             position = robot_parts["arm_6_joint"].getTargetPosition()
             arm_queue = []
             points = np.linspace([0,0,1.05], goal_point)
             goal_point_prev = goal_point
             for i in points:
-                arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=angle))
+                arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=0))
             state = "movingArmToReady"
 
         elif state == "movingArmToReady":
             if counter % 10 == 0:
                 if len(arm_queue) > int(counter/10):
-                    robot_parts, arm_joints = manipulate_to(arm_queue[int(counter/10)], robot_parts)
+                    robot_parts = manipulate_to(arm_queue[int(counter/10)], robot_parts)
                 else:
-                    state = "pause"
+                    state = "closeGripper"
                     counter = -1
             counter += 1
-
-        elif state == "pause":
-            counter, state = delay(100, state, "check-wrist-position", counter)
-
-        elif state =="check-wrist-position":
-            # checks to see if wrist joint it lined up with cube center.
-            wrist_position = get_position(arm_joints)
-            goal_point, goal_orientation, position_on_camera = goal_locate(camera)
-            goal_point[2] = 1.03
-            goal_point[0] -= 0.07
-            print("wrist pos: ", wrist_position, "goal_pose before: ", goal_point)
-            if wrist_position[1] > goal_point[1]:
-                goal_point[1] = wrist_position[1] - abs(goal_point[1] - wrist_position[1])/4
-            else:
-                goal_point[1] = wrist_position[1] + abs(goal_point[1] - wrist_position[1])/4
-
-            print("wrist pos: ", wrist_position, "goal_pose after: ", goal_point)
-            arm_queue = []
-            angle = (123-position_on_camera[0])/120
-            points = np.linspace(wrist_position, goal_point)
-            for i in points:
-                arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=angle))
-            state = "move-correct-arm"
-
-        elif state == "move-correct-arm":
-            if counter % 10 == 0:
-                if len(arm_queue) > int(counter/10):
-                    robot_parts, arm_joints = manipulate_to(arm_queue[int(counter/10)], robot_parts)
-                else:
-                    state = "pause2"
-                    counter = -1
-            counter += 1
-
-        elif state == "pause2":
-            counter, state = delay(100, state, "stop", counter)
-        
-        elif state == "stop":
-            wrist_position = get_position(arm_joints)
-            goal_point, goal_orientation, position_on_camera = goal_locate(camera)
-            print("wrist pos: ", wrist_position, "goal_pos: ", goal_point)
-            vL = 0
-            vR = 0
 
         elif state == "closeGripper":
             vL = 0
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            counter, state = delay(40, state, "backOut", counter)   
+            counter, state = delay(100, state, "backOut", counter)   
 
         elif state == "backOut":
             vL= -MAX_SPEED/2
@@ -532,6 +489,7 @@ while robot.step(timestep) != -1:
             vL = 0
             vR = 0
             counter, state = delay(100, state, "setArmToBasket", counter)
+            
         elif state == "setArmToBasket":
             vL = 0
             vR = 0
@@ -550,7 +508,7 @@ while robot.step(timestep) != -1:
         elif state == "movingArmToBasket":
             if counter % 10 == 0:
                 if len(arm_queue) > int(counter/10):
-                    robot_parts, arm_joints = manipulate_to(arm_queue[int(counter/10)], robot_parts)
+                    robot_parts = manipulate_to(arm_queue[int(counter/10)], robot_parts)
                     arm_7_position = robot_parts["arm_7_joint"].getTargetPosition()               
                 else:
                     state = "releaseObject"
@@ -567,7 +525,7 @@ while robot.step(timestep) != -1:
 
         elif state == "stowArm":
 
-            robot_parts, arm_joints = manipulate_to(ik_arm([0.0, -0.2, 1.6], my_chain, arm_joints), robot_parts)
+            robot_parts = manipulate_to(ik_arm([0.0, -0.2, 1.6], my_chain, arm_joints), robot_parts)
             state = "exploration"
     
     # Odometer coardinates:
