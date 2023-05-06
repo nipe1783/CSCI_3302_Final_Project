@@ -3,7 +3,7 @@ import math
 import random
 import cv2
 from matplotlib import pyplot as plt
-
+from scipy.signal import convolve2d
 
 class Node:
     """
@@ -203,11 +203,6 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
     # else:
     #     return None
     
-    
-    # TODO: Your code here
-    # TODO: Make sure to add every node you create onto node_list, and to set node.parent and node.path_from_parent for each
-    print("No goal given or path not found")
-    return node_list
     # print(waypoints)
 def visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height):
     prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
@@ -217,3 +212,16 @@ def visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_
         prevPoint = point
     plt.imshow(configuration_space)
     plt.show()
+
+def getPathSpace(waypoints, path_space, robot_space, world_to_map_width, world_to_map_height):
+    prevPoint = (int(waypoints[0][1] * world_to_map_width), int(waypoints[0][0] * world_to_map_height))
+    for point in waypoints:
+        point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
+        cv2.line(path_space, prevPoint, point, 1, 1)
+        prevPoint = point
+    # Note: path_space is slightly smaller than configuration space to avoid false positives
+    path_space = (convolve2d(path_space, robot_space[2:, 2:], mode = "same") >= 1).astype(np.uint8)
+    plt.imshow(path_space)
+    plt.show()
+    return path_space
+    

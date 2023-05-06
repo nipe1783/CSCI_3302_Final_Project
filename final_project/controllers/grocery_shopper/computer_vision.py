@@ -49,14 +49,15 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
                 wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
                 wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
                 wz = height+pose[2]
-                if wz < 0.7:
+                print("wx", wx, "wy", wy, "wz", wz)
+                if wz < 0.85:
                     wz = 0.575
                 else:
                     wz = 1.075
                 goal = [wx, wy, wz]
                 goalNew = True
                 for gl in goal_queue:
-                    if(math.dist(goal, gl)):
+                    if(math.dist(goal[:2], gl[:2])< 0.8) and abs(goal[2]-gl[2]<0.1):
                         goalNew = False
                         break
                 if goalNew:

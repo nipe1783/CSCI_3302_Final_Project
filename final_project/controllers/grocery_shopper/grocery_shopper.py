@@ -11,7 +11,7 @@ from matplotlib import pyplot as plt
 import cv2
 from mapping import obstacle_detected_roam
 from computer_vision import goal_detect
-from planning import rrt_star, visualize_path
+from planning import rrt_star, visualize_path, getPathSpace
 from localization import position_gps, navigate
 from manipulation import manipulate_to, ik_arm
 from helper import delay
@@ -130,17 +130,16 @@ map_height = 360
 world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
+width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
+robot_space = np.ones(shape=[width,width])
+path_space = []
 map = np.zeros(shape=[map_height,map_width])
 seen = np.zeros(shape=[map_height,map_width], dtype='uint8')
-
-heights = [0.575, 1.075]
 
 arm_joints =  [0, 0, 0.35, 0,  0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 0, 0]
 
 arm_queue = []
 
-width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
-robot_space = np.ones(shape=[width,width])
 waypoints = []
 threshold = 0.3 # we can change this value for tuning of what is considered an obstacle.\
 
@@ -186,17 +185,18 @@ while robot.step(timestep) != -1:
                 robot_parts["torso_lift_joint"].setPosition(arm_joints[2])
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: math.dist(point, goal_xy) < 0.5
+                goal_check = lambda point: math.dist(point, goal_xy) < 0.8
                 bounds = np.array([[0, world_height],[0, world_width]])
                 node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.2, state_is_goal=goal_check)
                 if pathFound: 
                     waypoints = node_list[-1].getPath()
+                    path_space = getPathSpace(waypoints, np.zeros(shape=[map_height,map_width]), robot_space, world_to_map_width, world_to_map_height)
                     visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
                     state = "navigation"
                     counter = 0
             elif waypoints:
                 # path following to explore unseen space
-                if counter >= len(waypoints):
+                if counter >= len(waypoints) or np.any(np.bitwise_and(path_space, map>=threshold)):
                     counter = 0
                     waypoints = []
                 elif math.dist((pose_x, pose_y), waypoints[counter]) < 0.3:
@@ -208,17 +208,23 @@ while robot.step(timestep) != -1:
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
                 # configuration_space = np.add((convolve2d(seen, robot_space, mode = "same") < 1).astype(np.uint8), configuration_space)
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: not seen[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))]
+                goal_check = lambda point: (not seen[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))]) and point[0] < 19
                 bounds = np.array([[0, world_height],[0, world_width]])
                 node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), None, 200, 1, state_is_goal=goal_check)
                 if pathFound: 
                     waypoints = node_list[-1].getPath()
+                    path_space = getPathSpace(waypoints, np.zeros(shape=[map_height,map_width]), robot_space, world_to_map_width, world_to_map_height)
                     visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
                     counter = 0
 
         elif state == "navigation":
             # print(waypoints)
-            if counter >= len(waypoints):
+            if np.any(np.bitwise_and(path_space, map>=threshold)):
+                print("path invalid, recalculating")
+                counter = 0
+                waypoints = []
+                state = "exploration"
+            elif counter >= len(waypoints):
                 state = "theta-docking"
                 counter = 0
                 waypoints = []
