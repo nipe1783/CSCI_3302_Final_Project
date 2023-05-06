@@ -3,7 +3,7 @@ import numpy as np
 import ikpy
 import ikpy.chain
 
-active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False]
+active_links =  [False, False, False, False,  True, True, True, True, True, True, True, False, False, False]
 my_chain = ikpy.chain.Chain.from_urdf_file("arm.urdf", active_links_mask=active_links)
 
 def manipulate_to(new_pose, robot_parts):
@@ -50,8 +50,8 @@ def ik_arm(target_position, initial, target_orientation=None, orientation_mode =
     else:
         return my_chain.inverse_kinematics(target_position, initial_position=initial)
     
-def get_position_and_angle(pose_arm):
+def get_position(pose_arm):
     'returns position of arm and angle as rotation matrix'
     frame = my_chain.forward_kinematics(pose_arm)
     pose = frame[:3, 3]
-    return pose, frame[:3, :3]
+    return pose

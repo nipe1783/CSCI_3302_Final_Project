@@ -2,6 +2,7 @@ import math
 import cv2
 import numpy as np
 
+LIDAR_SENSOR_MAX_RANGE = 5.5
 
 params = cv2.SimpleBlobDetector_Params()
 
@@ -18,6 +19,8 @@ params.minRepeatability = 3
 params.filterByColor = False
 
 detector = cv2.SimpleBlobDetector_create(params)
+
+# image dimensions: 135 240
 
 def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
 
@@ -39,32 +42,36 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
 
     mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
-    blobs = detector.detect(mask)  
-
+    blobs = detector.detect(mask)
     recObjects = camera.getRecognitionObjects()
+    blob_centerness = math.dist((0,0), (135, 240))
+    object_pos = []
     for blob in blobs:
         for object in recObjects:
             if math.dist(object.getPositionOnImage(), blob.pt) < 3:
                 pose = object.getPosition()
+                if math.dist((0,0), pose[:2]) > LIDAR_SENSOR_MAX_RANGE:
+                    continue
                 wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
                 wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
                 wz = height+pose[2]
-                print("wx", wx, "wy", wy, "wz", wz)
+                # print("wx", wx, "wy", wy, "wz", wz)
                 if wz < 0.85:
                     wz = 0.575
                 else:
                     wz = 1.075
-                goal = [wx, wy, wz]
+                goal = np.array([wx, wy, wz])
+                if math.dist(blob.pt, (135, 240)) < blob_centerness:
+                    object_pos = pose
+                    blob_centerness = math.dist(blob.pt, (67, 120))
                 goalNew = True
-                for gl in goal_queue:
-                    if(math.dist(goal[:2], gl[:2])< 0.8) and abs(goal[2]-gl[2]<0.1):
+                for i, gl in enumerate(goal_queue):
+                    if(math.dist(goal[:2], gl[:2])< 0.8) and abs(goal[2]-gl[2] < 0.1):
                         goalNew = False
+                        goal_queue[i] = 0.5*(gl + goal)
                         break
                 if goalNew:
                     goal_queue.append(goal)
-    if recObjects:
-        recObject = recObjects[0]
-        return recObject.getPosition(), goal_queue
-    else:
-        return (), goal_queue
+                    print("New goal found, goals total: ", len(goal_queue))
+    return object_pos, goal_queue
     
