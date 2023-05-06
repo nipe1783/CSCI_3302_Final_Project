@@ -448,7 +448,7 @@ while robot.step(timestep) != -1:
             angle = (123-position_on_camera[0])/120
 
             goal_point[0] += .07
-            goal_point[1] += 0.055
+            goal_point[1] += 0.05
             if goal_shelf == "top":
                 goal_point[2] = 1.03
             elif goal_shelf == "middle":
@@ -456,7 +456,6 @@ while robot.step(timestep) != -1:
             position = robot_parts["arm_6_joint"].getTargetPosition()
             arm_queue = []
             points = np.linspace([0,0,1.05], goal_point)
-            goal_point_prev = goal_point
             for i in points:
                 arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=0))
             state = "movingArmToReady"
@@ -475,7 +474,24 @@ while robot.step(timestep) != -1:
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            counter, state = delay(100, state, "backOut", counter)   
+            counter, state = delay(100, state, "readyRaiseArm", counter)   
+        
+        elif state == "readyRaiseArm":
+            position = robot_parts["arm_6_joint"].getTargetPosition()
+            arm_queue = []
+            points = np.linspace(goal_point, [goal_point[0], goal_point[1], goal_point[2] + .1])
+            for i in points:
+                arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=0))
+            state = "raiseArm"
+
+        elif state == "raiseArm":
+            if counter % 10 == 0:
+                if len(arm_queue) > int(counter/10):
+                    robot_parts = manipulate_to(arm_queue[int(counter/10)], robot_parts)
+                else:
+                    state = "backOut"
+                    counter = -1
+            counter += 1
 
         elif state == "backOut":
             vL= -MAX_SPEED/2
