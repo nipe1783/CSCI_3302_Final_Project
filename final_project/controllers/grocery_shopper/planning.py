@@ -215,5 +215,5 @@ def visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_
         point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
         cv2.line(configuration_space, prevPoint, point, 1, 1)
         prevPoint = point
-    plt.imshow(configuration_space)
-    plt.show()
+    # plt.imshow(configuration_space)
+    # plt.show()

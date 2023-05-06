@@ -10,7 +10,7 @@ from scipy.signal import convolve2d
 from matplotlib import pyplot as plt
 import cv2
 from mapping import obstacle_detected_roam
-from computer_vision import goal_detect
+from computer_vision import goal_detect, finger_detect
 from planning import rrt_star, visualize_path
 from localization import position_gps, navigate
 from manipulation import manipulate_to, ik_arm
@@ -142,7 +142,7 @@ arm_queue = []
 width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
 robot_space = np.ones(shape=[width,width])
 waypoints = []
-threshold = 0.3 # we can change this value for tuning of what is considered an obstacle.\
+threshold = 0.5 # we can change this value for tuning of what is considered an obstacle.\
 
 # angle = -1
 # Main Loop
@@ -153,8 +153,8 @@ goal_point = ()
 
 while robot.step(timestep) != -1:
 
-    # print(state)
-
+    print(state)
+    
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
     goal_p, goal_queue = goal_detect(camera, pose_x, pose_y, 1.1+torso_enc.getValue(), pose_theta, goal_queue)
@@ -179,14 +179,15 @@ while robot.step(timestep) != -1:
                 goal_location = goal_queue[len(goal_queue)-1]
                 goal_z = goal_location[2]
                 goal_xy = goal_location[0:2]
-                if goal_z < 0.7:
+                print(goal_xy)
+                if goal_z < 0.85:
                     arm_joints[2] = 0
                 else:
                     arm_joints[2] = 0.35
                 robot_parts["torso_lift_joint"].setPosition(arm_joints[2])
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
                 validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: math.dist(point, goal_xy) < 0.5
+                goal_check = lambda point: math.dist(point, goal_xy) < 0.8 and abs(goal_xy[0] - point[0]) < .1 and abs(goal_xy[1] - point[1]) > .6
                 bounds = np.array([[0, world_height],[0, world_width]])
                 node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.2, state_is_goal=goal_check)
                 if pathFound: 
@@ -359,6 +360,7 @@ while robot.step(timestep) != -1:
                 state = "approach"
 
         elif state == "approach":
+            print(lidar.getRangeImage()[333])
             error_x = goal_xy[0] - pose_x
             if not (error_x > -.02 and error_x < 0.02):
                 state = "orient-docking"
@@ -406,14 +408,13 @@ while robot.step(timestep) != -1:
 
         elif state == "setArmToReady":
             angle = math.atan(goal_point[1]/goal_point[0])
-            goal_point[0] += .07
-            goal_point[1] += .05
-            goal_point[2] = goal_location[2] + 0.01
+            goal_point[0] -= 0.08
+            goal_point[1] += 0.055
+            goal_point[2] = 1.04
             # position = robot_parts["arm_6_joint"].getTargetPosition()
             arm_queue = []
-            points = np.linspace([0.1,0,goal_point[2]], goal_point, 10)
+            points = np.linspace([-.03,0,goal_point[2]], goal_point, 10)
             for i in points:
-                print(i)
                 arm_queue.append(ik_arm(i,  arm_joints, angle=angle))
             state = "movingArmToReady"
 
@@ -422,16 +423,26 @@ while robot.step(timestep) != -1:
                 if len(arm_queue) > int(counter/10):
                     robot_parts = manipulate_to(arm_queue[int(counter/10)], robot_parts)
                 else:
-                    state = "closeGripper"
+                    state = "pause"
                     counter = -1
             counter += 1
+
+        elif state == "pause":
+            counter, state = delay(200, state, "correctArm", counter) 
+            vL = 0
+            vR = 0
+        
+        elif state == "correctArm":
+            finger_detect(camera)
+            vL = 0
+            vR = 0
 
         elif state == "closeGripper":
             vL = 0
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            counter, state = delay(40, state, "backOut", counter)   
+            counter, state = delay(40, state, "backout", counter)   
 
         elif state == "backOut":
             vL= -MAX_SPEED/2
@@ -486,7 +497,7 @@ while robot.step(timestep) != -1:
     # pose_x, pose_y, pose_theta = odometer(pose_x, pose_y, pose_theta, vL, vR, timestep)
 
     # print("pose_x: ", pose_x, " pose_y: ", pose_y, " pose_theta: ", pose_theta)
-    print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f, State: %s, Counter: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, counter))
+    # print("pose_x: %f pose_y: %f pose_theta: %f vL: %f, vR: %f, State: %s, Counter: %i" % (pose_x, pose_y, pose_theta, vL, vR, state, counter))
     
     # --------------
     # Lidar Mapping:
