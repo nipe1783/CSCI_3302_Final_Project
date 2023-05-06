@@ -1,5 +1,11 @@
 import math
 
+MAX_SPEED = 7.0  # [rad/s]
+AXLE_LENGTH = 0.4044 # m
+TURN_1_ANGLE = 0.4
+TURN_2_ANGLE = 0.05
+
+
 def odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH):
 
     pose_x += (vL+vR)/2/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0*math.cos(pose_theta)
@@ -35,32 +41,17 @@ def position_gps(gps, compass, world_height, world_width):
 
     return pose_x, pose_y, pose_theta
 
-def navigate(pose_x, pose_y, pose_theta, goal, AXLE_LENGTH, MAX_SPEED):
+def navigate(pose_x, pose_y, pose_theta, goal):
     rho = math.dist((pose_x, pose_y), goal)
-    alpha = (2 * math.pi + math.atan2(pose_x - goal[0], goal[1] - pose_y) - pose_theta) % (2 * math.pi)
+    alpha = (2 * math.pi + math.atan2(goal[1] - pose_y, goal[0] - pose_x) - pose_theta) % (2 * math.pi)
     if alpha > math.pi:
         alpha = alpha - (2*math.pi)
-
-    dX = rho
     dTheta = 10*alpha
-
-    # print("rho: ", rho, " alpha: ", alpha)
-
-    vL = dX - (dTheta*AXLE_LENGTH/2)
-    vR = dX + (dTheta*AXLE_LENGTH/2)
-    
-    speed = MAX_SPEED * 0.2
+    vL = rho - (dTheta*AXLE_LENGTH/2)
+    vR = rho + (dTheta*AXLE_LENGTH/2)
+    speed = MAX_SPEED/2
     if abs(vL) > abs(vR):
-        vR = vR/abs(vL) * speed
-        if vL > 0:
-            vL = speed
-        else:
-            vL = -speed
+        return speed, vR/abs(vL) * speed
     else: 
-        vL = vL/abs(vR) * speed
-        if vR > 0:
-            vR = speed
-        else:
-            vR = -speed
-    return vL, vR
+        return vL/abs(vR) * speed, speed
     

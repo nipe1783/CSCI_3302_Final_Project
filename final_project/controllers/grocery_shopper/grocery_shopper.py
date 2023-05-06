@@ -14,9 +14,9 @@ import cv2
 import heapq
 from mapping import mode_manual, obstacle_detected_roam
 from computer_vision import goal_detect, goal_locate, add_goal_state
-from planning import rrt_star
+from planning import rrt_star, visualize_path, getPathSpace
 from localization import position_gps, navigate
-from manipulation import manipulate_to, ik_arm
+from manipulation import manipulate_to, ik_arm, get_position
 from helper import delay, find_nearest_goal
 #Initialization
 print("=== Initializing Grocery Shopper...")
@@ -61,6 +61,7 @@ right_gripper_enc=robot.getDevice("gripper_right_finger_joint_sensor")
 left_gripper_enc.enable(timestep)
 right_gripper_enc.enable(timestep)
 
+
 # Enable wheel encoders (position sensors)
 left_wheel = robot.getDevice("wheel_left_joint_sensor")
 left_wheel.enable(timestep)
@@ -68,8 +69,8 @@ right_wheel = robot.getDevice("wheel_right_joint_sensor")
 right_wheel.enable(timestep)
 
 # Enable torso encoders (position sensors)
-# torso_enc = robot.getDevice("torso_lift_joint")
-# torso_enc.enable(timestep)
+torso_enc = robot.getDevice("torso_lift_joint_sensor")
+torso_enc.enable(timestep)
 
 # Enable Camera
 camera = robot.getDevice('camera')
@@ -97,7 +98,7 @@ keyboard.enable(timestep)
 # Environment dimesnions:
 # Width: 16.1 m
 # Height: 30 m
-# Origin is in bottom right of the room.
+# Origin is top left left of the room.
 
 world_width = 16.1 - 1.5
 world_height = 30 - 1.5
@@ -113,20 +114,6 @@ vR = 0
 lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
-[1.6668519798569494, -0.20284982283080194, -0.18583268587895996]
-item0 = [2.6202858632038093, 3.58914, 0.5748653025126261]
-item1 = [11.547000914636712, -8.505688675100652, 0.03486531467979112]
-item2 = [-1.3296063450130449, -4.05309, 0.5748653625599697]
-item3 = [2.3409306731047352, -3.53294, 0.5748654067999813]
-item4 = [-0.8647696076431266, 0.3606378757006146, 0.5748653700715028]
-item5 = [-2.773024136796192, 0.3100000000000003, 0.5748653025126261]
-item6 = [0.7772010699377632, 0.3700000000000001, 0.5748652878199019]
-item7 = [-2.6650533601864694, 0.2, 1.0748653705132794]
-item8 = [-3.26060345214566, 3.629999999999986, 1.0748653543083286]
-item9 = [5.67997938546148, 7.16031, 1.0748654067999996]
-item10 = [3.504540887533399, 3.58914, 1.074864218478985]
-item11 = [3.4994646114633245, 7.16914, 1.07486535924194]
-goal_list = [item0, item1, item2, item3, item4, item5, item6, item7, item8, item9, item10, item11]
 
 # queue that stores list of goal x,y,z locations
 goal_queue = []
@@ -167,11 +154,13 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 
 while robot.step(timestep) != -1:
 
-    # print(state)
-
     # GPS coardinates:
     pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
+    pose_z = 1.1+torso_enc.getValue()
+
+    # Locate yellow blobs and return camera position, if blob is detected
     gx, gy, goal_detected = goal_detect(camera)
+
     if mode == "manual":
         mode_manual()
 
@@ -182,21 +171,41 @@ while robot.step(timestep) != -1:
             if goal_queue:
                 # goal_queue has some goals in it. Robot navigates to them.
 
+                # gathering goal location after blob is detected using webots API:
                 goal_location = find_nearest_goal(pose_x, pose_y, goal_queue)
                 goal_z = goal_location[2]
                 goal_xy = goal_location[0:2]
+
+                # setting robot torso to correct height:
+                if goal_z < 0.85:
+                    # goal on lower shelf
+                    goal_shelf = "middle"
+                    arm_joints[2] = 0
+                else:
+                    # goal on upper shelf
+                    goal_shelf = "top"
+                    arm_joints[2] = 0.35
+                robot_parts["torso_lift_joint"].setPosition(arm_joints[2])
+
+                # find location robot should navigate to:
+                if pose_y < goal_xy[1]:
+                    # goal is on right shelf robot should arrive in middle of isle.
+                    rrt_goal = [goal_xy[0], goal_xy[1] - 1.5]
+                else:
+                    rrt_goal = [goal_xy[0], goal_xy[1] + 1.5]
+
+                # compute RRT path:
                 configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
-                validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
-                goal_check = lambda point: math.dist(point, goal_xy) < 1
+                validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0 # check to see point is a valid space on map.
+                goal_check = lambda point: math.dist(point, rrt_goal) < 0.1 # check to see if current point is within 0.8 meters of goal.
                 bounds = np.array([[0, world_height],[0, world_width]])
-                waypoints = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(goal_xy), 1000, 0.2, state_is_goal=goal_check)[-1].getPath()
-                prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
-                for point in waypoints:
-                    point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
-                    cv2.line(configuration_space, prevPoint, point, 1, 1)
-                    prevPoint = point
-                state = "navigation"
-                counter = 0
+                node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(rrt_goal), 1000, 0.2, state_is_goal=goal_check)
+                if pathFound: 
+                    waypoints = node_list[-1].getPath()
+                    path_space = getPathSpace(waypoints, np.zeros(shape=[map_height,map_width]), robot_space, world_to_map_width, world_to_map_height)
+                    visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
+                    state = "navigation"
+                    counter = 0
 
             else:
                 # Function to randomly explore map until goal is detected.
@@ -219,7 +228,7 @@ while robot.step(timestep) != -1:
                     vL = MAX_SPEED/1.3
                     vR = MAX_SPEED/1.3
                 if(goal_detected):
-                    goal_queue = add_goal_state(camera, pose_x, pose_y, pose_theta, goal_queue)
+                    goal_queue = add_goal_state(camera, pose_x, pose_y, pose_z, pose_theta, goal_queue)
 
         elif state == "recalculate path":
             configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
@@ -242,17 +251,19 @@ while robot.step(timestep) != -1:
             counter = 0
 
         elif state == "navigation":
-            # UNCOMMENT THIS WHEN RRT IS READY
-            # if counter >= len(waypoints):
-            #     state = "theta-docking"
-            #     counter = 0
-            #     continue
-            # if math.dist((pose_x, pose_y), waypoints[counter]) < 0.5:
-            #     counter += 1
-            # else:
-            #     vL, vR = navigate(pose_x, pose_y, pose_theta, waypoints[counter], AXLE_LENGTH, MAX_SPEED)
-            state = "theta-docking"
-            counter = 0
+            if np.any(np.bitwise_and(path_space, map>=threshold)):
+                print("path invalid, recalculating")
+                counter = 0
+                waypoints = []
+                state = "exploration"
+            elif counter >= len(waypoints):
+                state = "theta-docking"
+                counter = 0
+                waypoints = []
+            elif math.dist((pose_x, pose_y), waypoints[counter]) < 0.3:
+                counter += 1
+            else:
+                vL, vR= navigate(pose_x, pose_y, pose_theta, waypoints[counter])
 
         elif state == "theta-docking":
 
@@ -269,7 +280,7 @@ while robot.step(timestep) != -1:
                 else:
                     vL = 0
                     vR = 0
-                    counter, state = delay(50, state, "height-docking", counter)
+                    counter, state = delay(50, state, "x-docking", counter)
             elif pose_x < goal_xy[0] - buffer: 
                 if pose_theta < (2*math.pi) and pose_theta > math.pi:
                     # rotate robot to pose_theta = 2pi
@@ -282,29 +293,11 @@ while robot.step(timestep) != -1:
                 else:
                     vL = 0
                     vR = 0
-                    counter, state = delay(50, state, "height-docking", counter)
+                    counter, state = delay(50, state, "x-docking", counter)
             else:   
                     vL = 0
                     vR = 0
                     counter, state = delay(50, state, "re-theta-docking", counter)
-                
-
-        elif state == "height-docking":
-            torso_position = robot_parts["torso_lift_joint"].getTargetPosition()
-            if goal_z > -.45:
-                # goal is on top shelf
-                goal_shelf = "top"
-                if torso_position < 0.35:
-                    robot_parts["torso_lift_joint"].setPosition(torso_position + 0.01)
-                else:
-                    state = "x-docking"
-            else:
-                # goal is on middle shelf
-                goal_shelf = "middle"
-                if torso_position > 0:
-                    robot_parts["torso_lift_joint"].setPosition(torso_position - 0.01)
-                else:
-                    state = "x-docking"
 
         elif state == "x-docking":
             if pose_theta > (math.pi - math.pi/8) and pose_theta < (math.pi + math.pi/8):
@@ -440,6 +433,7 @@ while robot.step(timestep) != -1:
                     vL = 0
                     vR = 0
                     state = "stabilize"
+
         elif state == "stabilize":
             counter, state = delay(30, state, "openGripper", counter)
 
@@ -452,17 +446,18 @@ while robot.step(timestep) != -1:
         elif state == "setArmToReady":
             goal_point, goal_orientation, position_on_camera = goal_locate(camera)
             angle = (123-position_on_camera[0])/120
+
             goal_point[0] += .07
-            goal_point[1] += 0.055
+            goal_point[1] += 0.05
             if goal_shelf == "top":
-                goal_point[2] = 1.04
+                goal_point[2] = 1.03
             elif goal_shelf == "middle":
-                goal_point[2] = 0.9
+                goal_point[2] = 0.53
             position = robot_parts["arm_6_joint"].getTargetPosition()
             arm_queue = []
             points = np.linspace([0,0,1.05], goal_point)
             for i in points:
-                arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=angle))
+                arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=0))
             state = "movingArmToReady"
 
         elif state == "movingArmToReady":
@@ -479,7 +474,24 @@ while robot.step(timestep) != -1:
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            counter, state = delay(40, state, "backOut", counter)   
+            counter, state = delay(100, state, "readyRaiseArm", counter)   
+        
+        elif state == "readyRaiseArm":
+            position = robot_parts["arm_6_joint"].getTargetPosition()
+            arm_queue = []
+            points = np.linspace(goal_point, [goal_point[0], goal_point[1], goal_point[2] + .1])
+            for i in points:
+                arm_queue.append(ik_arm(i, my_chain, arm_joints, angle=0))
+            state = "raiseArm"
+
+        elif state == "raiseArm":
+            if counter % 10 == 0:
+                if len(arm_queue) > int(counter/10):
+                    robot_parts = manipulate_to(arm_queue[int(counter/10)], robot_parts)
+                else:
+                    state = "backOut"
+                    counter = -1
+            counter += 1
 
         elif state == "backOut":
             vL= -MAX_SPEED/2
@@ -493,6 +505,7 @@ while robot.step(timestep) != -1:
             vL = 0
             vR = 0
             counter, state = delay(100, state, "setArmToBasket", counter)
+            
         elif state == "setArmToBasket":
             vL = 0
             vR = 0
