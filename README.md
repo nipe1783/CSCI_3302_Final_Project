@@ -11,14 +11,16 @@ Final Project for CSCI3302 Introduction to Robotics. An autonomous robot which s
 ## Techniques
 
 - Computer Vision
-    - various image processing techniques using `cv2` discern objects and webot's recognition api to get objects relative positions
+    - using color filtering and blob detection in `cv2` to discern objects and then matching with objects in webot's recognition api to get objects relative positions to camera
 - Localization
-    - webots's api
+    - odometry with vL and vR
+    - webots's api with compass and gps if odometry is too far off
 - Mapping
-    - Autonomous Lidar mapping
+    - Autonomous mapping of obstacles and known space using LiDAR
 - Manipulation
     - IK using `ikpy`
     - arm file in `.\final_project\controllers\grocery_shopper\arm.urdf`
 - Planning
     - RRT* (adapted from HW2)
+    - Modifications to base RRT include path smoothing, returning if a path has been found, other user feedback, and a function parameter to check if a state is a goal as well as the original goal point 
 

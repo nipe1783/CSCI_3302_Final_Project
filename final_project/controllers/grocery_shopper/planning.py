@@ -205,6 +205,7 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
     
     # print(waypoints)
 def visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height):
+    '''Uses mathplot lib to visualize the path the robot will take, optional'''
     prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
     for point in waypoints:
         point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
@@ -214,13 +215,14 @@ def visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_
     plt.show()
 
 def getPathSpace(waypoints, path_space, robot_space, world_to_map_width, world_to_map_height):
+    '''returns the expanded path space for use in collision checking '''
     prevPoint = (int(waypoints[0][1] * world_to_map_width), int(waypoints[0][0] * world_to_map_height))
     for point in waypoints:
         point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
         cv2.line(path_space, prevPoint, point, 1, 1)
         prevPoint = point
     # Note: path_space is slightly smaller than configuration space to avoid false positives
-    path_space = (convolve2d(path_space, robot_space[2:, 2:], mode = "same") >= 1).astype(np.uint8)
+    path_space = (convolve2d(path_space, robot_space[1:, 1:], mode = "same") >= 1).astype(np.uint8)
     # plt.imshow(path_space)
     # plt.show()
     return path_space

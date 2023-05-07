@@ -25,13 +25,13 @@ detector = cv2.SimpleBlobDetector_create(params)
 def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
 
     '''
-    detects yellow blob on camera. returns location of the centermost object if detected and .
+    detects yellow blobs on camera's image. returns location of the centermost object in robot space if detected and updates the list of goals.
 
     camera: robot camera object
 
     returns: 
         object_pos: 
-        goal_queue: 
+        goal_queue: updated queue of goals in the form [[x,y,z], onLeft] where on Left is if the object is on the blue side of the shelf
     '''
 
     img = np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4))
@@ -68,7 +68,8 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
                 for i, gl in enumerate(goal_queue):
                     if(math.dist(goal[:2], gl[0][:2])< 1.1) and abs(goal[2]-gl[0][2])< 0.1:
                         goalNew = False
-                        goal_queue[i][0] = 0.5*(gl[0] + goal)
+                        goal_queue[i][0] = [0.5*(gl[0][0] + goal[0]), 0.5*(gl[0][1] + goal[1]), goal[2]]
+                        # print(goal_queue[i])
                         break
                 if goalNew:
                     # Note: additional variable is True if object is on the robot's left side ie left of shelf and false if on right
@@ -76,6 +77,6 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
                         goal_queue.append([goal, True])
                     else:
                         goal_queue.append([goal, False])
-                    print("New goal ", goal, " found, goals total: ", len(goal_queue))
+                    print("New goal found at: ", goal, " goals total: ", len(goal_queue))
     return object_pos, goal_queue
     
