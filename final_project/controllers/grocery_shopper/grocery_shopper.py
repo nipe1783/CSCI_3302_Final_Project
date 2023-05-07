@@ -9,11 +9,11 @@ import copy
 from scipy.signal import convolve2d
 from matplotlib import pyplot as plt
 import cv2
-# from mapping import obstacle_detected_roam
+from mapping import mode_manual
 from computer_vision import goal_detect
 from planning import rrt_star, visualize_path, getPathSpace
-from localization import position_gps, navigate
-from manipulation import manipulate_to, ik_arm, get_position
+from localization import position_odometer, navigate
+from manipulation import manipulate_to, ik_arm, get_position, get_position
 from helper import delay
 #Initialization
 print("=== Initializing Grocery Shopper...")
@@ -58,8 +58,6 @@ left_gripper_enc=robot.getDevice("gripper_left_finger_joint_sensor")
 right_gripper_enc=robot.getDevice("gripper_right_finger_joint_sensor")
 left_gripper_enc.enable(timestep)
 right_gripper_enc.enable(timestep)
-torso_enc = robot.getDevice("torso_lift_joint_sensor")
-torso_enc.enable(timestep)
 
 # Enable wheel encoders (position sensors)
 left_wheel = robot.getDevice("wheel_left_joint_sensor")
@@ -68,8 +66,8 @@ right_wheel = robot.getDevice("wheel_right_joint_sensor")
 right_wheel.enable(timestep)
 
 # Enable torso encoders (position sensors)
-# torso_enc = robot.getDevice("torso_lift_joint")
-# torso_enc.enable(timestep)
+torso_enc = robot.getDevice("torso_lift_joint_sensor")
+torso_enc.enable(timestep)
 
 # Enable Camera
 camera = robot.getDevice('camera')
@@ -97,7 +95,7 @@ keyboard.enable(timestep)
 # Environment dimesnions:
 # Width: 16.1 m
 # Height: 30 m
-# Origin is in bottom right of the room.
+# Origin is top left left of the room.
 
 world_width = 16.1 - 1.5
 world_height = 30 - 1.5
@@ -154,14 +152,18 @@ goal_point = ()
 
 while robot.step(timestep) != -1:
 
-    # print(state)
+    # Odometer coardinates:
+    pose_x, pose_y, pose_theta = position_odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH, gps, compass, world_height, world_width)
+    pose_z = 1.1+torso_enc.getValue()
 
-    # GPS coardinates:
-    pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
-    goal_point, goal_q = goal_detect(camera, pose_x, pose_y, 1.1+torso_enc.getValue(), pose_theta, goal_queue)
+    # Locate yellow blobs and return camera position, if blob is detected
+    goal_point, goal_q = goal_detect(camera, pose_x, pose_y, pose_z, pose_theta, goal_queue)
+    print(state)
     if camera_on:
         goal_queue = goal_q
     if mode == "autonomous":
+
+        # print(state)
         if state == "start":
             counter, state = delay(10, state, "exploration", counter)
         if state == "exploration":
@@ -285,6 +287,7 @@ while robot.step(timestep) != -1:
                     vL = 0
                     vR = 0
                     state = "stabilize"
+
         elif state == "stabilize":
             counter, state = delay(30, state, "openGripper", counter)
 
@@ -305,7 +308,7 @@ while robot.step(timestep) != -1:
             # angle = math.atan(goal_point[1]/goal_point[0])
             angle = 0
             # goal_point[0] += .07
-            goal_point[1] += .015
+            goal_point[1] += .05
             goal_point[2] = goal_location[2]-0.01
             print(goal_point)
             arm_queue = []
@@ -334,7 +337,24 @@ while robot.step(timestep) != -1:
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            counter, state = delay(40, state, "backOut", counter)   
+            counter, state = delay(60, state, "readyRaiseArm", counter)   
+        
+        elif state == "readyRaiseArm":
+            position = robot_parts["arm_6_joint"].getTargetPosition()
+            arm_queue = []
+            points = np.linspace(goal_point, [goal_point[0], goal_point[1], goal_point[2] + .1])
+            for i in points:
+                arm_queue.append(ik_arm(i, arm_joints, angle=0))
+            state = "raiseArm"
+
+        elif state == "raiseArm":
+            if counter % 10 == 0:
+                if len(arm_queue) > int(counter/10):
+                    robot_parts = manipulate_to(arm_queue[int(counter/10)], robot_parts)
+                else:
+                    state = "backOut"
+                    counter = -1
+            counter += 1
 
         elif state == "backOut":
             vL= -MAX_SPEED/2
@@ -373,7 +393,7 @@ while robot.step(timestep) != -1:
             robot_parts["gripper_right_finger_joint"].setPosition(0.045)
             goal_queue.pop(len(goal_queue)-1)
             camera_on = True
-            counter, state = delay(100, state, "stowArm", counter)
+            counter, state = delay(100, state, "exploration", counter)
             state = "exploration"
     
     # Odometer coardinates:
