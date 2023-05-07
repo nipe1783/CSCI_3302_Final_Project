@@ -10,4 +10,4 @@ textFiles: -1
 globalOptionalRendering: CoordinateSystem::PenPaintingRays::LightSensorRays::LidarRaysPaths
 consoles: Console:All:All
 renderingDevicePerspectives: TIAGo Steel:camera;1;0.99753;0.685668;0
-renderingDevicePerspectives: TIAGo Steel:display;1;0.550363;0.0366204;0.0262815
+renderingDevicePerspectives: TIAGo Steel:display;1;0.794444;0.0366204;0.0262815
