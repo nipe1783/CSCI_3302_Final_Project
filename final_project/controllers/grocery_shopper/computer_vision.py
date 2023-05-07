@@ -25,14 +25,13 @@ detector = cv2.SimpleBlobDetector_create(params)
 def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
 
     '''
-    detects yellow blob on camera. returns location of blob on image and if there is a blob detected.
+    detects yellow blob on camera. returns location of the centermost object if detected and .
 
     camera: robot camera object
 
     returns: 
-        gx: blob x location on camera. 
-        gy: blob y location on camera. 
-        bool: if blob is detected.
+        object_pos: 
+        goal_queue: 
     '''
 
     img = np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4))
@@ -46,12 +45,12 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
     recObjects = camera.getRecognitionObjects()
     blob_centerness = math.dist((0,0), (135, 240))
     object_pos = []
-    for blob in blobs:
-        for object in recObjects:
+    for object in recObjects:
+        pose = object.getPosition()
+        if math.dist((0,0), pose[:2]) > LIDAR_SENSOR_MAX_RANGE:
+            continue
+        for blob in blobs:
             if math.dist(object.getPositionOnImage(), blob.pt) < 3:
-                pose = object.getPosition()
-                if math.dist((0,0), pose[:2]) > LIDAR_SENSOR_MAX_RANGE:
-                    continue
                 wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
                 wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
                 wz = height+pose[2]
@@ -64,14 +63,19 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
                 if math.dist(blob.pt, (135, 240)) < blob_centerness:
                     object_pos = pose
                     blob_centerness = math.dist(blob.pt, (67, 120))
+                # Checking if the robot has seen an object before
                 goalNew = True
                 for i, gl in enumerate(goal_queue):
-                    if(math.dist(goal[:2], gl[:2])< 0.8) and abs(goal[2]-gl[2] < 0.1):
+                    if(math.dist(goal[:2], gl[0][:2])< 1.1) and abs(goal[2]-gl[0][2])< 0.1:
                         goalNew = False
-                        goal_queue[i] = 0.5*(gl + goal)
+                        goal_queue[i][0] = 0.5*(gl[0] + goal)
                         break
                 if goalNew:
-                    goal_queue.append(goal)
-                    print("New goal found, goals total: ", len(goal_queue))
+                    # Note: additional variable is True if object is on the robot's left side ie left of shelf and false if on right
+                    if wy < pose_y:
+                        goal_queue.append([goal, True])
+                    else:
+                        goal_queue.append([goal, False])
+                    print("New goal ", goal, " found, goals total: ", len(goal_queue))
     return object_pos, goal_queue
     
