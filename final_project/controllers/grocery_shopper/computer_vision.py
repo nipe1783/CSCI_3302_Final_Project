@@ -56,9 +56,9 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
                 wz = height+pose[2]
                 # print("wx", wx, "wy", wy, "wz", wz)
                 if wz < 0.85:
-                    wz = 0.575
+                    wz = 0.53
                 else:
-                    wz = 1.075
+                    wz = 1.03
                 goal = np.array([wx, wy, wz])
                 if math.dist(blob.pt, (135, 240)) < blob_centerness:
                     object_pos = pose
