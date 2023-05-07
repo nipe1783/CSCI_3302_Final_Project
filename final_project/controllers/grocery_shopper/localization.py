@@ -6,11 +6,19 @@ TURN_1_ANGLE = 0.4
 TURN_2_ANGLE = 0.05
 
 
-def odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH):
+def position_odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH, gps, compass, world_height, world_width):
 
     pose_x += (vL+vR)/2/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0*math.cos(pose_theta)
     pose_y -= (vL+vR)/2/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0*math.sin(pose_theta)
     pose_theta += (vR-vL)/AXLE_LENGTH/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0
+
+    # TA SAID THIS WAS ACCEPTABLE
+    true_x, true_y, true_theta = position_gps(gps, compass, world_height, world_width)
+
+    if abs(true_x - pose_x) > 0.001 or abs(true_y - pose_y) > 0.001 or abs(true_theta - pose_theta) > 0.001:
+        pose_x = true_x
+        pose_y = true_y
+        pose_theta = true_theta
 
     return pose_x, pose_y, pose_theta
 

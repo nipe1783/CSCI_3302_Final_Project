@@ -15,7 +15,7 @@ import heapq
 from mapping import mode_manual, obstacle_detected_roam
 from computer_vision import goal_detect, goal_locate, add_goal_state
 from planning import rrt_star, visualize_path, getPathSpace
-from localization import position_gps, navigate
+from localization import position_odometer, navigate
 from manipulation import manipulate_to, ik_arm, get_position
 from helper import delay, find_nearest_goal
 #Initialization
@@ -154,17 +154,19 @@ threshold = 0.3 # we can change this value for tuning of what is considered an o
 
 while robot.step(timestep) != -1:
 
-    # GPS coardinates:
-    pose_x, pose_y, pose_theta = position_gps(gps, compass, world_height, world_width)
+    # Odometer coardinates:
+    pose_x, pose_y, pose_theta = position_odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH, gps, compass, world_height, world_width)
     pose_z = 1.1+torso_enc.getValue()
 
     # Locate yellow blobs and return camera position, if blob is detected
     gx, gy, goal_detected = goal_detect(camera)
-
+    print(state)
     if mode == "manual":
         mode_manual()
 
     elif mode == "autonomous":
+
+        # print(state)
 
         if state == "exploration":
 
@@ -207,28 +209,30 @@ while robot.step(timestep) != -1:
                     state = "navigation"
                     counter = 0
 
-            else:
-                # Function to randomly explore map until goal is detected.
-                turn_left, turn_right = obstacle_detected_roam(lidar)
-
-                if turn_left and turn_right:
-                    # Turn Left
-                    vL = -MAX_SPEED/7
-                    vR = MAX_SPEED/7
-                elif turn_left:
-                    # Turn Left
-                    vL = -MAX_SPEED/7
-                    vR = MAX_SPEED/7
-                elif turn_right:
-                    # Turn Right
-                    vL = MAX_SPEED/7
-                    vR = -MAX_SPEED/7
-                else:
-                    # Continue Forward
-                    vL = MAX_SPEED/1.3
-                    vR = MAX_SPEED/1.3
+            elif waypoints:
+                # rrt path to unseen location
                 if(goal_detected):
                     goal_queue = add_goal_state(camera, pose_x, pose_y, pose_z, pose_theta, goal_queue)
+                elif counter >= len(waypoints) or np.any(np.bitwise_and(path_space, map>=threshold)):
+                    counter = 0
+                    waypoints = []
+                elif math.dist((pose_x, pose_y), waypoints[counter]) < 0.3:
+                    counter+=1
+                else:
+                    vL, vR= navigate(pose_x, pose_y, pose_theta, waypoints[counter])
+            
+            else:
+                # calculate path to unseen location
+                configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)               
+                validity_check = lambda point: configuration_space[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))] == 0
+                goal_check = lambda point: (not seen[(int(point[0]* world_to_map_height), int(point[1]*world_to_map_width))]) and point[0] < 19
+                bounds = np.array([[0, world_height],[0, world_width]])
+                node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), None, 200, 1, state_is_goal=goal_check)
+                if pathFound: 
+                    waypoints = node_list[-1].getPath()
+                    path_space = getPathSpace(waypoints, np.zeros(shape=[map_height,map_width]), robot_space, world_to_map_width, world_to_map_height)
+                    visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
+                    counter = 0
 
         elif state == "recalculate path":
             configuration_space = (convolve2d((map>=threshold).astype(int), robot_space, mode = "same") >= 1).astype(np.uint8)
@@ -447,7 +451,7 @@ while robot.step(timestep) != -1:
             goal_point, goal_orientation, position_on_camera = goal_locate(camera)
             angle = (123-position_on_camera[0])/120
 
-            goal_point[0] += .07
+            goal_point[0] += .1
             goal_point[1] += 0.05
             if goal_shelf == "top":
                 goal_point[2] = 1.03
@@ -474,7 +478,7 @@ while robot.step(timestep) != -1:
             vR = 0
             robot_parts["gripper_left_finger_joint"].setPosition(0)
             robot_parts["gripper_right_finger_joint"].setPosition(0)
-            counter, state = delay(100, state, "readyRaiseArm", counter)   
+            counter, state = delay(60, state, "readyRaiseArm", counter)   
         
         elif state == "readyRaiseArm":
             position = robot_parts["arm_6_joint"].getTargetPosition()
