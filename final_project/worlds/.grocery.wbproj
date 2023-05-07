@@ -7,7 +7,7 @@ centralWidgetVisible: 1
 renderingMode: PLAIN
 orthographicViewHeight: 1
 textFiles: -1
-globalOptionalRendering: CoordinateSystem::PenPaintingRays::LightSensorRays::LidarRaysPaths
+globalOptionalRendering: CoordinateSystem::PenPaintingRays::LightSensorRays
 consoles: Console:All:All
-renderingDevicePerspectives: TIAGo Steel:camera;1;0.99753;0.685668;0
-renderingDevicePerspectives: TIAGo Steel:display;1;0.794444;0.0366204;0.0262815
+renderingDevicePerspectives: TIAGo Steel:camera;1;1.22963;0.587346;0.00416667
+renderingDevicePerspectives: TIAGo Steel:display;1;0.411111;0.789398;0.380448

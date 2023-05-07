@@ -220,7 +220,7 @@ def getPathSpace(waypoints, path_space, robot_space, world_to_map_width, world_t
         cv2.line(path_space, prevPoint, point, 1, 1)
         prevPoint = point
     # Note: path_space is slightly smaller than configuration space to avoid false positives
-    path_space = (convolve2d(path_space, robot_space[4:, 4:], mode = "same") >= 1).astype(np.uint8)
+    path_space = (convolve2d(path_space, robot_space[1:, 1:], mode = "same") >= 1).astype(np.uint8)
     # plt.imshow(path_space)
     # plt.show()
     return path_space
