@@ -144,7 +144,7 @@ arm_queue = []
 # target_orientation = [0.5, -0.5, 2.0]
 # target_position = [curr_pose[0][3], curr_pose[1][3], curr_pose[2][3]]
 
-width = round(30*(AXLE_LENGTH)) # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
+width = round(30*(AXLE_LENGTH)) + 8 # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
 robot_space = np.ones(shape=[width,width])
 waypoints = []
 threshold = 0.3 # we can change this value for tuning of what is considered an obstacle.\
@@ -160,7 +160,7 @@ while robot.step(timestep) != -1:
 
     # Locate yellow blobs and return camera position, if blob is detected
     gx, gy, goal_detected = goal_detect(camera)
-    print(state)
+    
     if mode == "manual":
         mode_manual()
 
@@ -404,7 +404,7 @@ while robot.step(timestep) != -1:
             error_x = goal_xy[0] - pose_x
             if not (error_x > -.02 and error_x < 0.02):
                 state = "orient-docking"
-            if lidar.getRangeImage()[333] > 1:
+            if lidar.getRangeImage()[333] > .95:
                 vL = MAX_SPEED/5
                 vR = MAX_SPEED/5
             else:

@@ -18,10 +18,9 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2022b/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.007448131856150348 -0.9997465464003952 0.021245429916474032 5.60916323934524
-  position -12.94781102365064 3.355252680021477 7.491233952889357
-  follow "floor"
-  followType "Mounted Shot"
+  orientation -0.007448331006944118 -0.9996965757582421 0.023479326703638295 5.669146602891957
+  position -9.265691493179233 -0.1646001180959373 3.7263089980468695
+  follow "TIAGo Steel"
 }
 TexturedBackground {
   texture "empty_office"
