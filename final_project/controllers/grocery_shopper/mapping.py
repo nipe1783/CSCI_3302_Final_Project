@@ -8,7 +8,7 @@ def mode_manual(keyboard, MAX_SPEED, vL, vR):
     keyboard: robot keyboard object.
     MAX_Speed: robot max speed.
     vL: robot current left wheel velocity.
-    cR. robot current right wheel velocity.
+    vR. robot current right wheel velocity.
     returns: vL, vR
     '''
     key = keyboard.getKey()
@@ -33,6 +33,8 @@ def mode_manual(keyboard, MAX_SPEED, vL, vR):
         vR *= 0.75
     return vL, vR
 
+
+# Obsolete, no longer used with the new vision and location system
 def obstacle_detected_roam(lidar):
 
     '''

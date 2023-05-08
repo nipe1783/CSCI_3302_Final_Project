@@ -7,7 +7,8 @@ TURN_2_ANGLE = 0.05
 
 
 def position_odometer(pose_x, pose_y, pose_theta, vL, vR, timestep, MAX_SPEED, MAX_SPEED_MS, AXLE_LENGTH, gps, compass, world_height, world_width):
-
+    """Odometer from previous labs, will reset to gps values if the error is too big
+    """
     pose_x += (vL+vR)/2/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0*math.cos(pose_theta)
     pose_y -= (vL+vR)/2/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0*math.sin(pose_theta)
     pose_theta += (vR-vL)/AXLE_LENGTH/MAX_SPEED*MAX_SPEED_MS*timestep/1000.0
@@ -50,6 +51,7 @@ def position_gps(gps, compass, world_height, world_width):
     return pose_x, pose_y, pose_theta
 
 def navigate(pose_x, pose_y, pose_theta, goal):
+    """Given a point(goal), this will return the vL and vR to navigate to it. Taken from a previous lab"""
     rho = math.dist((pose_x, pose_y), goal)
     alpha = (2 * math.pi + math.atan2(goal[1] - pose_y, goal[0] - pose_x) - pose_theta) % (2 * math.pi)
     if alpha > math.pi:
