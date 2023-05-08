@@ -188,32 +188,22 @@ def rrt_star(state_bounds, state_is_valid, starting_point, goal_point, k, delta_
                     if state_is_goal(point):
                         return node_list, True
                 break
-    # if goal_point == None:
-    #     return node_list
-    # else:
-    #     return None
-    
-    
-    # TODO: Your code here
-    # TODO: Make sure to add every node you create onto node_list, and to set node.parent and node.path_from_parent for each
     print("No goal given or path not found")
     return node_list, False
-    # if goal_point == None:
-    #     return node_list
-    # else:
-    #     return None
-    
-    # print(waypoints)
+# This is to help visualize, if you want to see the paths that rrt* draws on the map, uncomment the place this is called in the main file
 def visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height):
+    '''Uses mathplot lib to visualize the path the robot will take, optional'''
     prevPoint = (int(pose_y * world_to_map_width), int(pose_x * world_to_map_height))
     for point in waypoints:
         point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))
         cv2.line(configuration_space, prevPoint, point, 1, 1)
         prevPoint = point
-    # plt.imshow(configuration_space)
-    # plt.show()
+    plt.imshow(configuration_space)
+    plt.show()
+
 
 def getPathSpace(waypoints, path_space, robot_space, world_to_map_width, world_to_map_height):
+    '''returns the expanded path space for use in collision checking '''
     prevPoint = (int(waypoints[0][1] * world_to_map_width), int(waypoints[0][0] * world_to_map_height))
     for point in waypoints:
         point = (int(point[1] * world_to_map_width), int(point[0] * world_to_map_height))

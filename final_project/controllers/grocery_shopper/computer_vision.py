@@ -1,19 +1,35 @@
-import numpy as np
-import cv2
 import math
-from helper import near, same_color
+import cv2
+import numpy as np
 
-def goal_detect(camera):
+LIDAR_SENSOR_MAX_RANGE = 5.5
+
+params = cv2.SimpleBlobDetector_Params()
+
+params.minThreshold = 1
+params.thresholdStep = 1
+
+params.filterByArea = True
+params.minArea = 2
+
+params.filterByCircularity = False
+params.filterByConvexity = False
+params.filterByInertia = False
+params.minRepeatability = 3
+params.filterByColor = False
+
+detector = cv2.SimpleBlobDetector_create(params)
+
+# image dimensions: 135 240
+
+def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
 
     '''
-    detects yellow blob on camera. returns location of blob on image and if there is a blob detected.
-
+    detects yellow blobs on camera's image. returns location of the centermost object in robot space if detected and updates the list of goals.
     camera: robot camera object
-
     returns: 
-        gx: blob x location on camera. 
-        gy: blob y location on camera. 
-        bool: if blob is detected.
+        object_pos: 
+        goal_queue: updated queue of goals in the form [[x,y,z], onLeft] where on Left is if the object is on the blue side of the shelf
     '''
 
     img = np.frombuffer(camera.getImage(), dtype=np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4))
@@ -23,72 +39,44 @@ def goal_detect(camera):
 
     mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
-    # apply Gaussian Blur
-    smoothed = cv2.GaussianBlur(mask, (0,0), sigmaX=1.5, sigmaY=1.5, borderType = cv2.BORDER_DEFAULT)
-    
-    # Apply a morphological opening to remove noise and small objects
-    kernel = np.ones((5,5),np.uint8)
-    opening = cv2.morphologyEx(smoothed, cv2.MORPH_OPEN, kernel)
-
-    # Find the contours of the remaining blobs in the image
-    contours, hierarchy = cv2.findContours(opening, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # CODE FOR SHOWING OBJECTS:
-    
-    # Draw the contours on a copy of the original image
-    smoothed_copy = smoothed.copy()
-    cv2.drawContours(smoothed, contours, -1, (0, 255, 0), 2)
-
-    # Identify the center of the blob by calculating the centroid of the contour
-
-    filtered_contours = []
-    blobs_gxgy = []
-    for c in contours:
-        area = cv2.contourArea(c)
-        if area > 100:
-            filtered_contours.append(c)
-
-    for c in filtered_contours:
-        M = cv2.moments(c)
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
-        cv2.circle(smoothed_copy, (cx, cy), 5, (0, 0, 255), -1)
-        blobs_gxgy.append([cx, cy])
-
-    if len(blobs_gxgy) > 0:
-
-        # location of middle goal detected
-        z = 123 # value for middle gx
-        closest_blob = min(blobs_gxgy, key=lambda x: abs(x[0] - z))
-        return closest_blob[0], closest_blob[1], True
-    else:
-        return -1, -1, False
-    
-def goal_locate(camera):
-    '''
-    returns position of goal relative to robot
-    '''
-    yellow = [255.0, 255.0, 0.0]
-    for object in camera.getRecognitionObjects():
-        color = object.getColors()
-        # print(color[0], color[1], color[2])
-        if (same_color(color, yellow)):
-            position_rg = object.getPosition()
-            orientation_rg = object.getOrientation()
-            position_on_camera = object.getPositionOnImage()
-            return [position_rg[0], position_rg[1], position_rg[2]], [orientation_rg[0], orientation_rg[1], orientation_rg[2]], [position_on_camera[0], position_on_camera[1]]
-        
-def add_goal_state(camera, pose_x, pose_y, pose_z, pose_theta, goal_queue):
-    yellow = [255.0, 255.0, 0.0]
-    for object in camera.getRecognitionObjects():
-        color = object.getColors()
-        if (same_color(color, yellow)):
-            pose = object.getPosition()
-            wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
-            wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
-            wz = pose_z+pose[2]
-            
-            goal = [wx, wy, wz]
-            if(not near(goal, goal_queue) and math.dist((pose_x,pose_y), goal[0:2]) < 5):
-                goal_queue.append(goal)
-    return goal_queue
+    blobs = detector.detect(mask)
+    recObjects = camera.getRecognitionObjects()
+    blob_centerness = math.dist((0,0), (135, 240))
+    blob_pt = ()
+    object_pos = []
+    for object in recObjects:
+        pose = object.getPosition()
+        # if math.dist((0,0), pose[:2]) > LIDAR_SENSOR_MAX_RANGE:
+        #     continue
+        for blob in blobs:
+            # blob.pt is the center of the blob, this statement checks if the recognition api and camera are seeing the same thing
+            if math.dist(object.getPositionOnImage(), blob.pt) < 3:
+                wx =  math.cos(pose_theta)*pose[0] - math.sin(pose_theta)*pose[1] + pose_x
+                wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
+                wz = height+pose[2]
+                # print("wx", wx, "wy", wy, "wz", wz)
+                if wz < 0.85:
+                    wz = 0.53
+                else:
+                    wz = 1.03
+                goal = np.array([wx, wy, wz])
+                if math.dist(blob.pt, (67, 120)) < blob_centerness:
+                    object_pos = pose
+                    blob_pt = blob.pt
+                    blob_centerness = math.dist(blob.pt, (67, 120))
+                # Checking if the robot has seen an object before
+                goalNew = True
+                for i, gl in enumerate(goal_queue):
+                    if(math.dist(goal[:2], gl[0][:2])< 1.1) and abs(goal[2]-gl[0][2])< 0.1:
+                        goalNew = False
+                        goal_queue[i][0] = [0.5*(gl[0][0] + goal[0]), 0.5*(gl[0][1] + goal[1]), goal[2]]
+                        # print(goal_queue[i])
+                        break
+                if goalNew:
+                    # Note: additional variable is True if object is on the robot's left side ie left of shelf and false if on right
+                    if wy < pose_y:
+                        goal_queue.append([goal, True])
+                    else:
+                        goal_queue.append([goal, False])
+                    print("New goal found at: ", goal, " goals total: ", len(goal_queue))
+    return object_pos, goal_queue, blob_pt
