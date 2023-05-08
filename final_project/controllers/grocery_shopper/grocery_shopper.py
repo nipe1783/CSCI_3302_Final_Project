@@ -115,10 +115,10 @@ lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
 
-# queue that stores list of goal x,y,z locations
+# list that stores list of goal x,y,z locations and a bool for which side of a shelf it is on
 goal_queue = []
-goal_index = 0
-goal_on_left = True
+goal_index = 0 # the location of the list which the robot is currently going to
+goal_on_left = True # whether or not the particular goal is on the left of the robot
 
 # ------------------------------------------------------------------
 # Robot Modes
@@ -133,15 +133,15 @@ map_height = 360
 world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
-map = np.zeros(shape=[map_height,map_width]) # 
-seen = np.zeros(shape=[map_height,map_width], dtype='uint8')
+map = np.zeros(shape=[map_height,map_width]) # map of obstacles
+seen = np.zeros(shape=[map_height,map_width], dtype='uint8') # map of known space
 
 arm_joints =  [0, 0, target_pos[2], 0,  target_pos[3], target_pos[4], target_pos[5], target_pos[6], target_pos[7], 0.0, target_pos[8], 0, 0]
-arm_queue = []
+arm_queue = [] # Queue for arm positions
 
 width = round(30*(AXLE_LENGTH)) + 8 # using same conversion where 360 pixels = 12 meters. 30 pixels per meter.
 robot_space = np.ones(shape=[width,width])
-waypoints = []
+waypoints = [] # Path used for navigation and exploration
 threshold = 0.3 # we can change this value for tuning of what is considered an obstacle.\
 
 # angle = -1
@@ -156,9 +156,8 @@ while robot.step(timestep) != -1:
 
     # Locate yellow blobs and return camera position, if blob is detected
     goal_point, goal_q, location_on_image = goal_detect(camera, pose_x, pose_y, pose_z, pose_theta, goal_queue)
-    if camera_on:
+    if camera_on: 
         goal_queue = goal_q
-    
     if mode == "manual":
         vL, vR = mode_manual() # No longer used, for testing originally
 
