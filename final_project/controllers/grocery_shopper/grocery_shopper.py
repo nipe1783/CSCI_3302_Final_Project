@@ -133,7 +133,7 @@ map_height = 360
 world_to_map_width = map_width / world_width
 world_to_map_height = map_height / world_height
 
-map = np.zeros(shape=[map_height,map_width])
+map = np.zeros(shape=[map_height,map_width]) # 
 seen = np.zeros(shape=[map_height,map_width], dtype='uint8')
 
 arm_joints =  [0, 0, target_pos[2], 0,  target_pos[3], target_pos[4], target_pos[5], target_pos[6], target_pos[7], 0.0, target_pos[8], 0, 0]
