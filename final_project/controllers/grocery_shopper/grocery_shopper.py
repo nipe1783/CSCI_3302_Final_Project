@@ -429,7 +429,7 @@ while robot.step(timestep) != -1:
                 state = "calculateArmPoses"
 
         elif state == "calculateArmPoses":
-            goal_point[0] += .3
+            goal_point[0] += .2
             goal_point[1] += 0.05
             goal_point[2] = goal_z
             position = robot_parts["arm_6_joint"].getTargetPosition()
