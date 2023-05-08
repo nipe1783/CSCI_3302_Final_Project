@@ -26,9 +26,12 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
 
     '''
     detects yellow blobs on camera's image. returns location of the centermost object in robot space if detected and updates the list of goals.
+    parameters:
     camera: robot camera object
+    pose_x, pose_y, height, pose_theta: the current location and orientation of the camer
+    goal_queue: the queue of existing goals, passed in to check for similar goals
     returns: 
-        object_pos: 
+        object_pos: pose of the centermost object in robot space from the persepective of the camera
         goal_queue: updated queue of goals in the form [[x,y,z], onLeft] where on Left is if the object is on the blue side of the shelf
     '''
 
@@ -55,6 +58,7 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
                 wy =  math.sin(pose_theta)*pose[0] + math.cos(pose_theta)*pose[1] + pose_y
                 wz = height+pose[2]
                 # print("wx", wx, "wy", wy, "wz", wz)
+                # The code below is because of the same reason why the lidar sensor had to be moved 0.5 m up.
                 if wz < 0.85:
                     wz = 0.53
                 else:
@@ -78,5 +82,6 @@ def goal_detect(camera, pose_x, pose_y, height, pose_theta, goal_queue):
                         goal_queue.append([goal, True])
                     else:
                         goal_queue.append([goal, False])
+                    # loggin
                     print("New goal found at: ", goal, " goals total: ", len(goal_queue))
     return object_pos, goal_queue, blob_pt

@@ -160,7 +160,7 @@ while robot.step(timestep) != -1:
         goal_queue = goal_q
     
     if mode == "manual":
-        vL, vR = mode_manual()
+        vL, vR = mode_manual() # No longer used, for testing originally
 
     elif mode == "autonomous":
 
@@ -198,12 +198,13 @@ while robot.step(timestep) != -1:
                 bounds = np.array([[0, world_height],[0, world_width]])
                 node_list, pathFound = rrt_star(bounds, validity_check, np.array([pose_x, pose_y]), np.array(nav_point), 500, 0.4)
                 if not node_list:
-                    # If the robot accidentally wanders into configuration space, it will back up so a path can be calculated
+                    # If the robot accidentally wanders into configuration space, it will back up so a path can be calculated from a better starting point
                     vL = -MAX_SPEED/3
                     vR = -MAX_SPEED/3
                 elif pathFound: 
                     waypoints = node_list[-1].getPath()
                     path_space = getPathSpace(waypoints, np.zeros(shape=[map_height,map_width]), robot_space, world_to_map_width, world_to_map_height)
+                    # Uncomment this if you want to see each time a new path is generated
                     # visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
                     state = "navigation"
                     counter = 0
@@ -229,10 +230,12 @@ while robot.step(timestep) != -1:
                 if pathFound: 
                     waypoints = node_list[-1].getPath()
                     path_space = getPathSpace(waypoints, np.zeros(shape=[map_height,map_width]), robot_space, world_to_map_width, world_to_map_height)
+                    # Uncomment this if you want to see each time a new path is generated
                     # visualize_path(waypoints, configuration_space, pose_x, pose_y, world_to_map_width, world_to_map_height)
                     counter = 0
         elif state == "navigation":
             if np.any(np.bitwise_and(path_space, map>=threshold)):
+                # Collision anticipated
                 print("path invalid, recalculating")
                 counter = 0
                 waypoints = []
@@ -241,11 +244,12 @@ while robot.step(timestep) != -1:
                 state = "theta-docking"
                 counter = 0
                 waypoints = []
-            elif math.dist((pose_x, pose_y), waypoints[counter]) < 0.3:
+            elif math.dist((pose_x, pose_y), waypoints[counter]) < 0.2:
                 counter += 1
             else:
                 vL, vR= navigate(pose_x, pose_y, pose_theta, waypoints[counter])
-
+        # Below are a lot of docking steps which take the robot and make sure it is in a good position to grab cubes
+        # Note from Sean Shi: The branch sesh9096 in github contains a much simpler sequence of docking steps if performance is desired and if the robot is getting stuck in the orient/approach phase
         elif state == "theta-docking":
 
             buffer = 0.04
@@ -425,12 +429,12 @@ while robot.step(timestep) != -1:
                 state = "calculateArmPoses"
 
         elif state == "calculateArmPoses":
-            goal_point[0] += .1
+            goal_point[0] += .3
             goal_point[1] += 0.05
             goal_point[2] = goal_z
             position = robot_parts["arm_6_joint"].getTargetPosition()
             arm_queue = []
-            print(goal_point)
+            # print(goal_point)
             points = np.linspace([0.0,0.0,1.05], goal_point)
             for point in points:
                 arm_queue.append(ik_arm(point, arm_joints, angle=0))
@@ -475,6 +479,7 @@ while robot.step(timestep) != -1:
             counter, state = delay(100, state, "restore-height", counter)
 
         elif state == "restore-height":
+            # Raises the torso to its highest point
             torso_position = robot_parts["torso_lift_joint"].getTargetPosition()
             if torso_position < 0.35:
                 robot_parts["torso_lift_joint"].setPosition(torso_position + .01)
@@ -524,6 +529,7 @@ while robot.step(timestep) != -1:
             counter, state = delay(100, state, "stowArm", counter)
 
         elif state == "stowArm":
+            # sets arm to an out of the way position and resets the state to exploration
             goal_queue.pop(goal_index)
             camera_on = True
             robot_parts = manipulate_to(ik_arm([0.0, -0.2, 1.6], arm_joints), robot_parts)
